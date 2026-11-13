@@ -1,6 +1,7 @@
 package com.waizusora.wdb
 
 import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -17,18 +18,25 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.waizusora.wdb.adb.WirelessAdbManager
 import kotlinx.coroutines.launch
 
 @Composable
-fun AdbToolsPanel(manager: WirelessAdbManager, connected: Boolean) {
+fun AdbToolsPanel(manager: WirelessAdbManager, connected: Boolean, transferDirectoryUri: Uri?) {
+    val context = LocalContext.current
+    var directoryFiles by remember(transferDirectoryUri) { mutableStateOf<List<DocumentFile>>(emptyList()) }
+    LaunchedEffect(transferDirectoryUri) {
+        directoryFiles = transferDirectoryUri?.let { uri -> runCatching { DocumentFile.fromTreeUri(context, uri)?.listFiles()?.filter { it.isFile }?.toList().orEmpty() }.getOrDefault(emptyList()) }.orEmpty()
+    }
     val scope = rememberCoroutineScope()
     var working by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("Connect to a device to enable these tools.") }
@@ -54,8 +62,8 @@ fun AdbToolsPanel(manager: WirelessAdbManager, connected: Boolean) {
         }
     }
 
-    val installPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) runOperation { manager.installApk(uri) }
+    val installPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) runOperation { manager.installApks(uris) { status = it } }
     }
     val pushPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) runOperation { manager.pushFile(uri, pushPath.trim()) }
@@ -74,9 +82,9 @@ fun AdbToolsPanel(manager: WirelessAdbManager, connected: Boolean) {
             )
             Button(
                 enabled = connected && !working,
-                onClick = { installPicker.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream")) },
+                onClick = { installPicker.launch(arrayOf("application/vnd.android.package-archive", "application/zip", "application/octet-stream")) },
                 modifier = Modifier.fillMaxWidth()
-            ) { Text("Install APK") }
+            ) { Text("Install APK / Split APKs") }
             OutlinedTextField(
                 value = packageName,
                 onValueChange = { packageName = it.trim().take(255) },
@@ -96,6 +104,7 @@ fun AdbToolsPanel(manager: WirelessAdbManager, connected: Boolean) {
 
             HorizontalDivider()
             Text("File transfer · ADB Sync", style = MaterialTheme.typography.titleMedium)
+            Text(transferDirectoryUri?.let { "Local folder: selected in Settings" } ?: "No default local folder selected. Choose one in Settings to browse files and save pulled files there.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedTextField(
                 value = pushPath,
                 onValueChange = { pushPath = it.take(1024) },
@@ -108,6 +117,17 @@ fun AdbToolsPanel(manager: WirelessAdbManager, connected: Boolean) {
                 onClick = { pushPicker.launch(arrayOf("*/*")) },
                 modifier = Modifier.fillMaxWidth()
             ) { Text("Choose file to push") }
+            if (directoryFiles.isNotEmpty()) {
+                Text("Files in selected folder", style = MaterialTheme.typography.labelLarge)
+                directoryFiles.take(20).forEach { file ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(file.name ?: "Unnamed file", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                        TextButton(enabled = connected && !working && pushPath.startsWith("/"), onClick = {
+                            runOperation { manager.pushFile(file.uri, pushPath.trim().trimEnd('/') + "/" + (file.name ?: "upload.bin")) }
+                        }) { Text("Push") }
+                    }
+                }
+            }
             OutlinedTextField(
                 value = pullPath,
                 onValueChange = { pullPath = it.take(1024) },
@@ -118,11 +138,15 @@ fun AdbToolsPanel(manager: WirelessAdbManager, connected: Boolean) {
             OutlinedButton(
                 enabled = connected && !working && pullPath.startsWith("/"),
                 onClick = {
-                    val name = pullPath.substringAfterLast('/').ifBlank { "adb-download.bin" }
-                    pullPicker.launch(name)
+                    val tree = transferDirectoryUri
+                    if (tree != null) runOperation { manager.pullFileToDirectory(pullPath.trim(), tree) }
+                    else {
+                        val name = pullPath.substringAfterLast('/').ifBlank { "adb-download.bin" }
+                        pullPicker.launch(name)
+                    }
                 },
                 modifier = Modifier.fillMaxWidth()
-            ) { Text("Pull file to this device") }
+            ) { Text(if (transferDirectoryUri != null) "Pull into selected folder" else "Pull file to this device") }
 
             HorizontalDivider()
             Text("Port forwarding", style = MaterialTheme.typography.titleMedium)
