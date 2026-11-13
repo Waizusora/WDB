@@ -102,7 +102,8 @@ class FloatingPairService : Service() {
             orientation = LinearLayout.VERTICAL
             visibility = android.view.View.GONE
         }
-        form.addView(label("Pair device"))\n        form.addView(label("IP address"))
+        form.addView(label("Pair device"))
+        form.addView(label("IP address"))
         addressInput = input("192.168.1.10", android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI)
         form.addView(addressInput, fieldParams())
         form.addView(label("Port"))
