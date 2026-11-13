@@ -16,6 +16,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import java.io.Closeable
+import java.net.InetAddress
+import java.net.NetworkInterface
+import java.util.Collections
 import java.io.IOException
 import java.io.File
 import java.util.zip.ZipInputStream
@@ -54,13 +57,33 @@ class WirelessAdbManager(
         require(pairingCode.matches(Regex("[0-9]{6}"))) {
             "The Wireless debugging pairing code must contain exactly six digits."
         }
+        val endpointHost = resolveLocalEndpoint(host)
         AdbClient.pairTls(
-            host = host,
+            host = endpointHost,
             port = port,
             pairingCode = pairingCode,
             keyProvider = keyProvider
         ).getOrThrow()
         Unit
+    }
+
+    /**
+     * Android Wireless Debugging runs on this device. When the entered address belongs
+     * to one of this device's network interfaces, route the pairing socket through
+     * loopback instead of the Wi-Fi interface (which may reject self-connections).
+     * Remote device addresses are left unchanged.
+     */
+    private fun resolveLocalEndpoint(host: String): String {
+        return runCatching {
+            val target = InetAddress.getByName(host)
+            val localAddresses = Collections.list(NetworkInterface.getNetworkInterfaces())
+                .flatMap { network -> Collections.list(network.inetAddresses) }
+            if (localAddresses.any { it.address.contentEquals(target.address) }) {
+                if (target.address.size == 16) "::1" else "127.0.0.1"
+            } else {
+                host
+            }
+        }.getOrDefault(host)
     }
 
     suspend fun connect(host: String, port: Int): String = withContext(Dispatchers.IO) {
