@@ -6,14 +6,14 @@ plugins {
 
 android {
     namespace = "com.waizusora.wdb"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.waizusora.wdb"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "0.2.0"
     }
 
     buildFeatures { compose = true }
@@ -36,5 +36,13 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.core:core-ktx:1.15.0")
+
+    // Direct ADB client: SPAKE2 pairing, TLS transport, and Shell V2.
+    implementation("com.flyfishxu:kadb:2.1.4")
+    // mDNS discovery for pairing and connect endpoints.
+    implementation("com.flyfishxu:kadb-mdns:2.1.4")
+    // Android 8 requires a TLS 1.3 provider for Wireless Debugging pairing.
+    implementation("org.conscrypt:conscrypt-android:2.5.2")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
