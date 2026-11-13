@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.waizusora.wdb.session.AdbSessionService
 import com.waizusora.wdb.session.FloatingPairService
+import com.waizusora.wdb.session.AdbSessionState
 import kotlinx.coroutines.launch
 
 private data class AdbCommandOption(
@@ -68,6 +69,8 @@ private fun WdbApp(showPairInitially: Boolean) {
     val context = LocalContext.current
     val manager = remember(context) { (context.applicationContext as WdbApplication).adbManager }
     val discovery by manager.discoveryState.collectAsState()
+    val connectedModel by manager.connectedModel.collectAsState()
+    val sessionRunning by AdbSessionState.running.collectAsState()
     val scope = rememberCoroutineScope()
     val startSession: () -> Unit = {
         if (!manager.isConnected()) {
@@ -77,7 +80,6 @@ private fun WdbApp(showPairInitially: Boolean) {
                 context, Intent(context, AdbSessionService::class.java)
                     .setAction(AdbSessionService.ACTION_START)
             )
-            sessionRunning = true
             statusMessage = "Foreground ADB session started."
         }
     }
@@ -94,8 +96,6 @@ private fun WdbApp(showPairInitially: Boolean) {
     var pairPort by remember { mutableStateOf("") }
     var connectPort by remember { mutableStateOf("") }
     var pairingCode by remember { mutableStateOf("") }
-    var connectedModel by remember { mutableStateOf<String?>(null) }
-    var sessionRunning by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf("Scanning for Wireless debugging services…") }
     var commandOutput by remember { mutableStateOf("") }
@@ -186,8 +186,6 @@ private fun WdbApp(showPairInitially: Boolean) {
                                             Intent(context, AdbSessionService::class.java)
                                                 .setAction(AdbSessionService.ACTION_STOP)
                                         )
-                                        connectedModel = null
-                                        sessionRunning = false
                                         busy = false
                                         statusMessage = "ADB transport stopped."
                                     }
@@ -251,10 +249,8 @@ private fun WdbApp(showPairInitially: Boolean) {
                                                     runCatching {
                                                         manager.connect(endpoint.host, endpoint.port)
                                                     }.onSuccess { model ->
-                                                        connectedModel = model
                                                         statusMessage = "Authenticated ADB transport ready."
                                                     }.onFailure { error ->
-                                                        connectedModel = null
                                                         statusMessage = error.message ?: "ADB connection failed."
                                                     }
                                                     busy = false
