@@ -4,8 +4,8 @@ WDB includes or depends on the following third-party components. Their respectiv
 
 | Component | Version | License | Project |
 | --- | --- | --- | --- |
-| Kadb ADB client | 2.1.4 | Apache License 2.0 | https://github.com/flyfishxu/Kadb |
-| Kadb mDNS module | 2.1.4 | Apache License 2.0 | https://github.com/flyfishxu/Kadb |
+| Kadb ADB client | 2.1.5 | Apache License 2.0 | https://github.com/flyfishxu/Kadb |
+| Kadb mDNS module | 2.1.5 | Apache License 2.0 | https://github.com/flyfishxu/Kadb |
 | Conscrypt Android | 2.5.2 | Apache License 2.0 | https://github.com/google/conscrypt |
 | AndroidX and Jetpack Compose | Resolved by Gradle | Apache License 2.0 | https://developer.android.com/jetpack |
 
