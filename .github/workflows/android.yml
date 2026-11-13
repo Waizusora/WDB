@@ -47,6 +47,9 @@ jobs:
           set -o pipefail
           "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
 
+      - name: Run JVM unit tests
+        run: gradle --no-daemon testDebugUnitTest
+
       - name: Assemble debug APK
         run: gradle --no-daemon assembleDebug
 
