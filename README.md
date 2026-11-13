@@ -89,7 +89,7 @@ Android does not expose a stable public intent that opens the pairing-code dialo
 
 - **Live stream** runs `logcat -v threadtime` over the authenticated Shell V2 stream.
 - **Stop stream** cancels the streaming coroutine.
-- **Capture** retrieves a bounded snapshot using `logcat -d -t 500 -v threadtime`.
+- **Capture** retrieves a bounded snapshot using `logcat -b all -d -t 500 -v threadtime`.
 - **Clear Logcat** runs `logcat -c` on the connected device. The UI reports success or that the ADB device is not connected.
 
 The live UI buffer is intentionally bounded to prevent unbounded memory growth during long-running streams.
