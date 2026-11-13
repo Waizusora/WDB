@@ -35,7 +35,7 @@ Pairing success and transport connection are distinct states. A pairing handshak
 
 ## Command execution
 
-The current command catalog executes a bounded set of shell commands through the authenticated ADB transport. PID lookup validates package/process names before invoking `pidof`. Logcat capture uses `logcat -d -t 500 -v threadtime`, retains a bounded output snapshot, and applies a local text filter. adb-kt also exposes a Shell V2 Flow API; WDB's live Logcat UI remains to be implemented.
+The current command catalog executes a bounded set of shell commands through the authenticated ADB transport. PID lookup validates package/process names before invoking `pidof`. Logcat capture uses `logcat -d -t 500 -v threadtime` for a bounded snapshot and adb-kt's Shell V2 Flow API for cancellable live streaming. Both paths retain a bounded output buffer and apply a local text filter.
 
 ## Background execution
 
