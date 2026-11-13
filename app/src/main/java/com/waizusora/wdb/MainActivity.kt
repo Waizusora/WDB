@@ -21,7 +21,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.outlined.Article
+import androidx.compose.material.icons.automirrored.outlined.Article
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -455,7 +455,7 @@ private fun WdbApp(showPairInitially: Boolean) {
                 ElevatedCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Outlined.Article, contentDescription = "Logcat", modifier = Modifier.size(18.dp))
+                            Icon(Icons.AutoMirrored.Outlined.Article, contentDescription = "Logcat", modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text("Logcat", style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.SemiBold)
@@ -536,7 +536,7 @@ private fun WdbApp(showPairInitially: Boolean) {
                                                     }
                                                     if (text.isNotEmpty()) {
                                                         logcatOutput = (logcatOutput + text).takeLast(60_000)
-                                                        withContext(Dispatchers.IO) { output?.write(text.toByteArray(Charsets.UTF_8)); output?.flush() }
+                                                        withContext(Dispatchers.IO) { output.write(text.toByteArray(Charsets.UTF_8)); output.flush() }
                                                     }
                                                     if (chunk is ShellChunk.Exit) streamingLogcat = false
                                                 }
