@@ -7,6 +7,7 @@ import android.app.Service
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
@@ -14,6 +15,7 @@ import android.os.IBinder
 import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
+import android.view.ViewTreeObserver
 import android.view.inputmethod.InputMethodManager
 import android.content.Context
 import android.widget.EditText
@@ -36,6 +38,7 @@ class FloatingPairService : Service() {
     private var windowManager: WindowManager? = null
     private var overlay: LinearLayout? = null
     private var windowParams: WindowManager.LayoutParams? = null
+    private var keyboardLayoutListener: ViewTreeObserver.OnGlobalLayoutListener? = null
     private var expanded = false
     private lateinit var addressInput: EditText
     private lateinit var portInput: EditText
@@ -168,9 +171,14 @@ class FloatingPairService : Service() {
             x = dp(14)
             y = dp(180)
         }
+        windowParams?.softInputMode =
+            WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
+                WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
         overlay = panel
-        runCatching { windowManager?.addView(panel, windowParams) }
-            .onFailure { stopSelf() }
+        runCatching {
+            windowManager?.addView(panel, windowParams)
+            installKeyboardPositioning(panel)
+        }.onFailure { stopSelf() }
     }
 
     private fun setExpanded(value: Boolean) {
@@ -186,6 +194,9 @@ class FloatingPairService : Service() {
             } else {
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
             }
+            params.softInputMode =
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or
+                    WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN
             runCatching { windowManager?.updateViewLayout(panel, params) }
         }
         if (value) {
@@ -198,6 +209,31 @@ class FloatingPairService : Service() {
             (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager)
                 .hideSoftInputFromWindow(addressInput.windowToken, 0)
         }
+    }
+
+
+    /**
+     * Move the expanded overlay into the top safe area while the IME is visible.
+     * This keeps the pairing form above the keyboard and reduces obstruction of
+     * Android's pairing dialog (IP address, port, and pairing code).
+     */
+    private fun installKeyboardPositioning(panel: LinearLayout) {
+        val listener = ViewTreeObserver.OnGlobalLayoutListener {
+            if (!expanded || !panel.isAttachedToWindow) return@OnGlobalLayoutListener
+            val visibleFrame = Rect()
+            panel.getWindowVisibleDisplayFrame(visibleFrame)
+            val screenHeight = resources.displayMetrics.heightPixels
+            val keyboardVisible = screenHeight - visibleFrame.bottom > dp(160)
+            val targetY = if (keyboardVisible) dp(12) else dp(180)
+            windowParams?.let { params ->
+                if (params.y != targetY) {
+                    params.y = targetY
+                    runCatching { windowManager?.updateViewLayout(panel, params) }
+                }
+            }
+        }
+        keyboardLayoutListener = listener
+        panel.viewTreeObserver.addOnGlobalLayoutListener(listener)
     }
 
     private fun performPairing(button: TextView) {
@@ -281,7 +317,15 @@ class FloatingPairService : Service() {
     }
 
     override fun onDestroy() {
-        overlay?.let { view -> runCatching { windowManager?.removeView(view) } }
+        overlay?.let { view ->
+            keyboardLayoutListener?.let { listener ->
+                if (view.viewTreeObserver.isAlive) {
+                    view.viewTreeObserver.removeOnGlobalLayoutListener(listener)
+                }
+            }
+            runCatching { windowManager?.removeView(view) }
+        }
+        keyboardLayoutListener = null
         overlay = null
         windowManager = null
         serviceScope.cancel()
