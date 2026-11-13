@@ -12,6 +12,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -29,6 +30,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.waizusora.wdb.adb.WirelessAdbManager
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 
 @Composable
 fun AdbToolsPanel(manager: WirelessAdbManager, connected: Boolean, transferDirectoryUri: Uri?) {
@@ -39,6 +42,11 @@ fun AdbToolsPanel(manager: WirelessAdbManager, connected: Boolean, transferDirec
     }
     val scope = rememberCoroutineScope()
     var working by remember { mutableStateOf(false) }
+    var operationJob by remember { mutableStateOf<Job?>(null) }
+    var transferBytes by remember { mutableStateOf(0L) }
+    var transferTotal by remember { mutableStateOf(0L) }
+    var transferStartedAt by remember { mutableStateOf(0L) }
+    val portRules by manager.portRules.collectAsState()
     var status by remember { mutableStateOf("Connect to a device to enable these tools.") }
     var uninstallTarget by remember { mutableStateOf("") }
     var showUninstallConfirmation by remember { mutableStateOf(false) }
@@ -53,23 +61,43 @@ fun AdbToolsPanel(manager: WirelessAdbManager, connected: Boolean, transferDirec
     fun runOperation(block: suspend () -> String) {
         if (!connected || working) return
         working = true
-        scope.launch {
-            status = runCatching { block() }.fold(
-                onSuccess = { it },
-                onFailure = { it.message ?: "ADB operation failed." }
-            )
-            working = false
+        transferBytes = 0L
+        transferTotal = 0L
+        transferStartedAt = android.os.SystemClock.elapsedRealtime()
+        operationJob = scope.launch {
+            try {
+                status = block()
+            } catch (cancelled: CancellationException) {
+                status = "Operation cancelled. A partial destination file may need cleanup."
+                throw cancelled
+            } catch (error: Throwable) {
+                status = error.message ?: "ADB operation failed."
+            } finally {
+                working = false
+                operationJob = null
+            }
         }
+    }
+    fun updateTransfer(bytes: Long, total: Long = 0L) {
+        transferBytes = bytes
+        if (total > 0L) transferTotal = total
+        val elapsedSeconds = ((android.os.SystemClock.elapsedRealtime() - transferStartedAt).coerceAtLeast(1L)) / 1000.0
+        val speed = (bytes / elapsedSeconds).toLong()
+        val eta = if (transferTotal > bytes && speed > 0L) (transferTotal - bytes) / speed else -1L
+        status = "Transferred ${android.text.format.Formatter.formatShortFileSize(context, bytes)}" +
+            (if (transferTotal > 0L) " / ${android.text.format.Formatter.formatShortFileSize(context, transferTotal)}" else "") +
+            " · ${android.text.format.Formatter.formatShortFileSize(context, speed)}/s" +
+            (if (eta >= 0L) " · ETA ${eta}s" else "")
     }
 
     val installPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         if (uris.isNotEmpty()) runOperation { manager.installApks(uris) { status = it } }
     }
     val pushPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) runOperation { manager.pushFile(uri, pushPath.trim()) }
+        if (uri != null) { val total = context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L; runOperation { manager.pushFile(uri, pushPath.trim()) { updateTransfer(it, total) } } }
     }
     val pullPicker = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri: Uri? ->
-        if (uri != null) runOperation { manager.pullFile(pullPath.trim(), uri) }
+        if (uri != null) runOperation { manager.pullFile(pullPath.trim(), uri) { updateTransfer(it) } }
     }
 
     Card(Modifier.fillMaxWidth()) {
@@ -123,7 +151,7 @@ fun AdbToolsPanel(manager: WirelessAdbManager, connected: Boolean, transferDirec
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(file.name ?: "Unnamed file", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                         TextButton(enabled = connected && !working && pushPath.startsWith("/"), onClick = {
-                            runOperation { manager.pushFile(file.uri, pushPath.trim().trimEnd('/') + "/" + (file.name ?: "upload.bin")) }
+                            runOperation { manager.pushFile(file.uri, pushPath.trim().trimEnd('/') + "/" + (file.name ?: "upload.bin")) { updateTransfer(it, file.length()) } }
                         }) { Text("Push") }
                     }
                 }
@@ -139,7 +167,7 @@ fun AdbToolsPanel(manager: WirelessAdbManager, connected: Boolean, transferDirec
                 enabled = connected && !working && pullPath.startsWith("/"),
                 onClick = {
                     val tree = transferDirectoryUri
-                    if (tree != null) runOperation { manager.pullFileToDirectory(pullPath.trim(), tree) }
+                    if (tree != null) runOperation { manager.pullFileToDirectory(pullPath.trim(), tree) { updateTransfer(it) } }
                     else {
                         val name = pullPath.substringAfterLast('/').ifBlank { "adb-download.bin" }
                         pullPicker.launch(name)
@@ -205,7 +233,24 @@ fun AdbToolsPanel(manager: WirelessAdbManager, connected: Boolean, transferDirec
                     modifier = Modifier.weight(1f)
                 ) { Text("Remove") }
             }
-            if (working) Text("Working…", style = MaterialTheme.typography.labelMedium)
+            if (working) {
+                if (transferTotal > 0L) LinearProgressIndicator(progress = { (transferBytes.toFloat() / transferTotal).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth())
+                else LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Working…", modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
+                    TextButton(onClick = { operationJob?.cancel() }) { Text("Cancel") }
+                }
+            }
+            if (portRules.isNotEmpty()) {
+                HorizontalDivider()
+                Text("Active rules created in this WDB session", style = MaterialTheme.typography.labelLarge)
+                portRules.forEach { rule ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(if (rule.reverse) "Reverse · device:${rule.sourcePort} → host:${rule.destinationPort}" else "Forward · localhost:${rule.sourcePort} → device:${rule.destinationPort}", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                        TextButton(enabled = connected && !working, onClick = { runOperation { if (rule.reverse) manager.removeReverse(rule.sourcePort) else manager.removeForward(rule.sourcePort) } }) { Text("Remove") }
+                    }
+                }
+            }
             Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
