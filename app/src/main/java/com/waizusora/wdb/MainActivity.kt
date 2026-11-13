@@ -197,7 +197,7 @@ private fun WdbApp(showPairInitially: Boolean) {
                                         statusMessage = "ADB transport stopped."
                                     }
                                 },
-                                enabled = sessionRunning && !busy,
+                                enabled = (sessionRunning || connectedModel != null) && !busy,
                                 modifier = Modifier.weight(1f)
                             ) { Text("Stop") }
                         }
