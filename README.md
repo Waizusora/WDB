@@ -1,6 +1,8 @@
-# WDB
+# WDB — Wireless Debug Bridge
 
-WDB is an Android Wireless Debugging client with a minimal Material 3 interface. It pairs with Android devices using the ADB SPAKE2 pairing protocol and connects directly to `adbd` over the authenticated Wireless Debugging TLS transport.
+WDB stands for **Wireless Debug Bridge**. It is an Android application for pairing with and operating Android Debug Bridge (ADB) connections over Android Wireless Debugging.
+
+WDB uses a minimal Material 3 interface and connects directly to `adbd` through the authenticated Wireless Debugging TLS transport.
 
 ## Application
 
@@ -9,20 +11,20 @@ WDB is an Android Wireless Debugging client with a minimal Material 3 interface.
 - Target SDK: API 35
 - Compile SDK: API 36
 - Language and UI: Kotlin, Jetpack Compose, Material 3
-- ADB implementation: adb-kt 1.0.13 (Apache License 2.0)
-- Pairing primitive: spake2-kt v1.0.2 (Apache License 2.0)
+- ADB implementation: adb-kt (Apache License 2.0)
+- Pairing primitive: spake2-kt (Apache License 2.0)
 
-## Implemented capabilities
+## Features
 
-- ADB wireless pairing with the six-digit pairing code shown by Android.
+- Six-digit ADB Wireless Debugging pairing.
 - Android NSD/mDNS discovery of pairing and connection endpoints.
-- TLS ADB connection with a protocol-level Shell V2 handshake before showing Connected.
-- AES-GCM encrypted ADB host identity using Android Keystore.
-- Foreground session service and partial wake lock.
+- Authenticated ADB TLS connection with a Shell V2 handshake.
+- AES-GCM encrypted ADB host identity backed by Android Keystore.
+- Foreground ADB session service with a full wake lock while the session is active.
 - Optional floating pairing shortcut, gated by user-granted overlay access.
-- Checkable shell-command catalog, custom shell-command entry, `pidof` package lookup, and Logcat snapshot/live capture with text filtering.
-
-Logcat supports a bounded 500-line snapshot and a cancellable live Shell V2 stream. Additional command families and automated protocol tests remain under development.
+- Checkable shell-command catalog, custom shell commands, and validated `pidof` package lookup.
+- Live Logcat streaming over Shell V2, bounded in-memory output, text filtering, snapshot capture, and Clear Logcat (`logcat -c`).
+- In-app Open Source Licenses information.
 
 ## Build requirements
 
@@ -32,35 +34,81 @@ Logcat supports a bounded 500-line snapshot and a cancellable live Shell V2 stre
 - Android SDK Platform 36
 - Android device with Wireless debugging (Android 11 or later recommended)
 
-Open the repository in Android Studio and run the `app` configuration. If Gradle 9.5.0 is installed locally:
+Build a debug APK:
 
 ```bash
 gradle --no-daemon assembleDebug
 ```
+
+Build a release APK locally by setting all four environment variables:
+
+- `WDB_KEYSTORE_PATH`
+- `WDB_KEYSTORE_PASSWORD`
+- `WDB_KEY_ALIAS`
+- `WDB_KEY_PASSWORD`
+
+Then run:
+
+```bash
+gradle --no-daemon assembleRelease
+```
+
+## GitHub Releases
+
+Pushing a tag matching `v*` starts the release workflow. Configure all of these repository Actions secrets to publish a signed APK:
+
+- `ANDROID_KEYSTORE_BASE64`: Base64-encoded JKS/keystore file.
+- `ANDROID_KEYSTORE_PASSWORD`: Keystore password.
+- `ANDROID_KEY_ALIAS`: Signing key alias.
+- `ANDROID_KEY_PASSWORD`: Signing key password.
+
+The workflow checks all four secrets before restoring the keystore. If any value is missing, the signed release build and GitHub Release publication steps are skipped. The debug build workflow remains independent.
+
+Example tag:
+
+```bash
+git tag v0.4.0
+git push origin v0.4.0
+```
+
+Never commit keystore files or signing credentials. The repository `.gitignore` excludes common signing key and secret file formats.
 
 ## Wireless debugging workflow
 
 1. Enable Developer Options and Wireless debugging on the target device.
 2. Tap **Pair device** in WDB. Android opens Developer Options; select Wireless debugging and then **Pair device with pairing code**.
 3. Keep the system pairing dialog visible and enter its IP address, pairing port, and six-digit code in WDB.
-4. WDB performs the ADB SPAKE2 pairing exchange over TLS. Pairing success is reported only when the library completes the handshake.
+4. WDB performs the ADB SPAKE2 pairing exchange over TLS.
 5. Wait for mDNS to discover the separate ADB connection endpoint.
-6. Tap **Connect** for the discovered endpoint. WDB verifies the ADB transport by executing a Shell V2 handshake.
-7. Tap **Start** to keep the authenticated session visible through a foreground service. Use **Stop** to close the transport and release the wake lock.
+6. Tap **Connect**. WDB validates the authenticated transport with a Shell V2 handshake.
+7. Tap **Start** to activate the foreground session. Use **Stop** to close the transport, cancel Logcat streaming, and release the wake lock.
 
 Android does not expose a stable public intent that opens the pairing-code dialog on every OEM build. WDB therefore opens Developer Options and provides an optional floating shortcut when overlay access is granted.
 
+## Logcat
+
+- **Live stream** runs `logcat -v threadtime` over the authenticated Shell V2 stream.
+- **Stop stream** cancels the streaming coroutine.
+- **Capture** retrieves a bounded snapshot using `logcat -d -t 500 -v threadtime`.
+- **Clear Logcat** runs `logcat -c` on the connected device. The UI reports success or that the ADB device is not connected.
+
+The live UI buffer is intentionally bounded to prevent unbounded memory growth during long-running streams.
+
 ## Permissions and background execution
 
-WDB requests network, notification, foreground-service, and wake-lock permissions required by the implemented features. Overlay access and battery-optimization exemption are special user-granted capabilities. A foreground service and partial wake lock improve session continuity but cannot guarantee immunity from force-stop, OEM process management, or system termination.
+WDB requests network, notification, foreground-service, overlay, battery-optimization, and `WAKE_LOCK` capabilities required by its features. Overlay access and battery-optimization exemption require explicit user approval.
+
+The session service acquires `PowerManager.FULL_WAKE_LOCK` while active. This keeps the display and CPU awake and has a higher battery cost than a partial wake lock. The lock is released on Stop and service destruction. Android may still terminate an application process or honor a user force-stop; no application can guarantee immunity from system or OEM process management.
 
 ## Security
 
-The ADB host private key is encrypted with AES-GCM using a non-exportable Android Keystore key. Pairing codes are held only for the pairing operation and are not written to logs. The ADB client and SPAKE2 implementation are Apache-2.0 licensed. The protocol library is a recent third-party project and has not been independently audited by WDB maintainers; validate behavior on dedicated test devices before relying on it in sensitive environments.
+The ADB host private key is encrypted with AES-GCM using a non-exportable Android Keystore key. Pairing codes are held only for the pairing operation and are not written to logs. Signing keys must be stored only in GitHub Actions secrets or secure local storage.
+
+The ADB client and SPAKE2 implementation are Apache-2.0 licensed. Third-party protocol code has not been independently audited by WDB maintainers. Validate behavior on dedicated test devices before relying on it in sensitive environments.
 
 ## Third-party components
 
-The direct ADB and SPAKE2 libraries are Apache-2.0 licensed. Bouncy Castle, Okio, and Kotlin Coroutines are included transitively under their respective licenses. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+WDB provides an **Open Source Licenses** screen in Settings. Dependency names, versions, copyright notices, and license identifiers are also documented in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Full license texts remain available from the upstream projects.
 
 ## License
 
