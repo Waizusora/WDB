@@ -109,6 +109,22 @@ private fun WdbApp(showPairInitially: Boolean) {
         else statusMessage = "Notification permission is required to show the active session notification."
     }
 
+    var transferDirectoryUri by remember(context) {
+        mutableStateOf(context.getSharedPreferences("wdb_settings", android.content.Context.MODE_PRIVATE)
+            .getString("transfer_directory_uri", null)?.let(Uri::parse))
+    }
+    val transferDirectoryPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                context.getSharedPreferences("wdb_settings", android.content.Context.MODE_PRIVATE)
+                    .edit().putString("transfer_directory_uri", uri.toString()).apply()
+                transferDirectoryUri = uri
+                statusMessage = "Transfer directory saved. Push and Pull can use this folder."
+            }.onFailure { statusMessage = "Unable to save directory access: ${it.message}" }
+        }
+    }
     var showSettings by remember { mutableStateOf(false) }
     var showOpenSourceLicenses by remember { mutableStateOf(false) }
     var showPair by remember { mutableStateOf(showPairInitially) }
@@ -228,7 +244,7 @@ private fun WdbApp(showPairInitially: Boolean) {
                     }
                 }
 
-                AdbToolsPanel(manager = manager, connected = connectedModel != null)
+                AdbToolsPanel(manager = manager, connected = connectedModel != null, transferDirectoryUri = transferDirectoryUri)
 
                 ElevatedCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -571,6 +587,30 @@ private fun WdbApp(showPairInitially: Boolean) {
                 title = { Text("Settings") },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("File transfer directory", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            transferDirectoryUri?.let { "Selected: ${androidx.documentfile.provider.DocumentFile.fromTreeUri(context, it)?.name ?: it.lastPathSegment}" }
+                                ?: "Not selected · Pull uses the system save dialog; Push uses the system file picker.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        OutlinedButton(onClick = { transferDirectoryPicker.launch(transferDirectoryUri) }, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (transferDirectoryUri == null) "Choose transfer directory" else "Change transfer directory")
+                        }
+                        if (transferDirectoryUri != null) {
+                            TextButton(onClick = {
+                                runCatching {
+                                    context.contentResolver.releasePersistableUriPermission(
+                                        transferDirectoryUri!!,
+                                        Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                                    )
+                                }
+                                context.getSharedPreferences("wdb_settings", android.content.Context.MODE_PRIVATE)
+                                    .edit().remove("transfer_directory_uri").apply()
+                                transferDirectoryUri = null
+                            }) { Text("Clear selected directory") }
+                        }
+                        HorizontalDivider()
                         Text("Overlay access")
                         OutlinedButton(onClick = {
                             context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
