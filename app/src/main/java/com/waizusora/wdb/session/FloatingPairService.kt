@@ -236,7 +236,7 @@ class FloatingPairService : Service() {
         hint = hintText
         textSize = 13f
         inputType = type
-        singleLine = true
+        setSingleLine(true)
         setTextColor(Color.WHITE)
         setHintTextColor(Color.rgb(125, 138, 158))
         setPadding(dp(10), 0, dp(10), 0)
