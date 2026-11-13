@@ -1,65 +1,73 @@
 package com.waizusora.wdb.adb
 
 import android.content.Context
-import com.flyfishxu.kadb.Kadb
-import com.flyfishxu.kadb.mdns.KadbMdnsAndroid
-import com.flyfishxu.kadb.mdns.MdnsDiscoveryState
+import io.github.rhythmcache.adb.AdbClient
+import io.github.rhythmcache.adb.AdbKeyProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.flow.StateFlow
 import java.io.Closeable
 import java.io.IOException
 
 /**
- * Coordinates pairing, mDNS discovery, and one authenticated ADB transport.
+ * Coordinates secure Wireless Debugging pairing, mDNS discovery, and ADB TLS sessions.
  *
- * All blocking protocol operations run on Dispatchers.IO. The active client is
- * replaced only after a successful shell handshake and is always closed on failure.
+ * The client is retained at application scope so Activity recreation does not close
+ * an active session. A transport is considered connected only after a Shell V2
+ * handshake succeeds.
  */
-class WirelessAdbManager(context: Context) : Closeable {
-    private val mdns = KadbMdnsAndroid(context.applicationContext)
-    val discoveryState: StateFlow<MdnsDiscoveryState> = mdns.state
+class WirelessAdbManager(
+    context: Context,
+    private val keyProvider: AdbKeyProvider
+) : Closeable {
+    private val discovery = WirelessAdbDiscovery(context.applicationContext)
+    val discoveryState = discovery.state
 
     @Volatile
-    private var activeClient: Kadb? = null
+    private var activeClient: AdbClient? = null
 
     private val _connectedModel = MutableStateFlow<String?>(null)
     val connectedModel = _connectedModel.asStateFlow()
 
-    fun startDiscovery() = mdns.start()
+    fun startDiscovery() = discovery.start()
 
     suspend fun pair(host: String, port: Int, pairingCode: String) = withContext(Dispatchers.IO) {
         validateEndpoint(host, port)
         require(pairingCode.matches(Regex("[0-9]{6}"))) {
             "The Wireless debugging pairing code must contain exactly six digits."
         }
-        Kadb.pair(host, port, pairingCode)
+        AdbClient.pairTls(
+            host = host,
+            port = port,
+            pairingCode = pairingCode,
+            keyProvider = keyProvider
+        ).getOrThrow()
+        Unit
     }
 
     suspend fun connect(host: String, port: Int): String = withContext(Dispatchers.IO) {
         validateEndpoint(host, port)
-        val candidate = Kadb.create(
+        val candidate = AdbClient.connectTls(
             host = host,
             port = port,
-            connectTimeout = CONNECT_TIMEOUT_MS,
-            socketTimeout = SOCKET_TIMEOUT_MS
+            keyProvider = keyProvider,
+            handshakeTimeoutMs = CONNECT_TIMEOUT_MS
         )
         try {
             val handshake = candidate.shell("echo WDB_TRANSPORT_READY")
-            if (handshake.exitCode != 0 || handshake.allOutput.trim() != "WDB_TRANSPORT_READY") {
-                throw IOException("ADB transport handshake returned an unexpected response.")
+            if (!handshake.isSuccess || handshake.stdoutText.trim() != "WDB_TRANSPORT_READY") {
+                throw IOException("ADB TLS transport handshake returned an unexpected response.")
             }
-            val model = candidate.shell("getprop ro.product.model").allOutput.trim()
+            val model = candidate.shell("getprop ro.product.model").stdoutText.trim()
                 .ifBlank { "Android device" }
             val previous = activeClient
             activeClient = candidate
             _connectedModel.value = model
-            previous?.close()
+            runCatching { previous?.close() }
             model
         } catch (error: Throwable) {
-            candidate.close()
+            runCatching { candidate.close() }
             throw error
         }
     }
@@ -67,17 +75,30 @@ class WirelessAdbManager(context: Context) : Closeable {
     suspend fun execute(command: String): String = withContext(Dispatchers.IO) {
         require(command.isNotBlank()) { "Command must not be empty." }
         val client = activeClient ?: throw IllegalStateException("No authenticated ADB transport.")
-        client.shell(command).allOutput
+        val result = client.shell(command)
+        buildString {
+            append(result.stdoutText)
+            if (result.stderrText.isNotBlank()) {
+                append("\n[stderr]\n")
+                append(result.stderrText)
+            }
+            if (!result.isSuccess) {
+                append("\n[exit code ")
+                append(result.exitCode)
+                append(']')
+            }
+        }
     }
 
     suspend fun disconnect() = withContext(Dispatchers.IO) {
-        activeClient?.close()
+        val client = activeClient
         activeClient = null
         _connectedModel.value = null
+        runCatching { client?.close() }
     }
 
     fun isConnected(): Boolean {
-        val connected = activeClient?.connectionCheck() == true
+        val connected = activeClient?.isClosed == false
         if (!connected) _connectedModel.value = null
         return connected
     }
@@ -86,7 +107,7 @@ class WirelessAdbManager(context: Context) : Closeable {
         runCatching { activeClient?.close() }
         activeClient = null
         _connectedModel.value = null
-        mdns.close()
+        discovery.close()
     }
 
     private fun validateEndpoint(host: String, port: Int) {
@@ -94,7 +115,8 @@ class WirelessAdbManager(context: Context) : Closeable {
         require(port in 1..65535) { "Port must be between 1 and 65535." }
         val ipv4 = host.split(".").let { parts ->
             parts.size == 4 && parts.all { part ->
-                part.isNotEmpty() && part.all(Char::isDigit) && part.toIntOrNull()?.let { it in 0..255 } == true
+                part.isNotEmpty() && part.all(Char::isDigit) &&
+                    part.toIntOrNull()?.let { it in 0..255 } == true
             }
         }
         val ipv6 = host.contains(':') && host.matches(Regex("[0-9a-fA-F:.%]+"))
@@ -102,7 +124,6 @@ class WirelessAdbManager(context: Context) : Closeable {
     }
 
     private companion object {
-        const val CONNECT_TIMEOUT_MS = 10_000
-        const val SOCKET_TIMEOUT_MS = 30_000
+        const val CONNECT_TIMEOUT_MS = 30_000L
     }
 }
