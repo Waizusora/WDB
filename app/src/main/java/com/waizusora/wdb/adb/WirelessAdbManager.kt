@@ -26,6 +26,8 @@ import java.util.zip.ZipInputStream
  * an active session. A transport is considered connected only after a Shell V2
  * handshake succeeds.
  */
+data class PortForwardRule(val reverse: Boolean, val sourcePort: Int, val destinationPort: Int)
+
 class WirelessAdbManager(
     context: Context,
     private val keyProvider: AdbKeyProvider
@@ -39,6 +41,8 @@ class WirelessAdbManager(
 
     private val _connectedModel = MutableStateFlow<String?>(null)
     val connectedModel = _connectedModel.asStateFlow()
+    private val _portRules = MutableStateFlow<List<PortForwardRule>>(emptyList())
+    val portRules = _portRules.asStateFlow()
 
     fun startDiscovery() = discovery.start()
 
@@ -224,12 +228,14 @@ class WirelessAdbManager(
         validatePort(localPort)
         validatePort(devicePort)
         requireClient().forward.add("tcp:$localPort", "tcp:$devicePort")
+        _portRules.value = (_portRules.value.filterNot { !it.reverse && it.sourcePort == localPort } + PortForwardRule(false, localPort, devicePort))
         "Forward active: 127.0.0.1:$localPort → device:$devicePort"
     }
 
     suspend fun removeForward(localPort: Int): String = withContext(Dispatchers.IO) {
         validatePort(localPort)
         requireClient().forward.remove("tcp:$localPort")
+        _portRules.value = _portRules.value.filterNot { !it.reverse && it.sourcePort == localPort }
         "Forward removed: 127.0.0.1:$localPort"
     }
 
@@ -237,12 +243,14 @@ class WirelessAdbManager(
         validatePort(devicePort)
         validatePort(hostPort)
         requireClient().reverse.add("tcp:$devicePort", "tcp:$hostPort")
+        _portRules.value = (_portRules.value.filterNot { it.reverse && it.sourcePort == devicePort } + PortForwardRule(true, devicePort, hostPort))
         "Reverse active: device:$devicePort → 127.0.0.1:$hostPort"
     }
 
     suspend fun removeReverse(devicePort: Int): String = withContext(Dispatchers.IO) {
         validatePort(devicePort)
         requireClient().reverse.remove("tcp:$devicePort")
+        _portRules.value = _portRules.value.filterNot { it.reverse && it.sourcePort == devicePort }
         "Reverse removed: device:$devicePort"
     }
 
@@ -263,6 +271,7 @@ class WirelessAdbManager(
         val client = activeClient
         activeClient = null
         _connectedModel.value = null
+        _portRules.value = emptyList()
         runCatching { client?.close() }
     }
 
@@ -276,6 +285,7 @@ class WirelessAdbManager(
         runCatching { activeClient?.close() }
         activeClient = null
         _connectedModel.value = null
+        _portRules.value = emptyList()
         discovery.close()
     }
 
