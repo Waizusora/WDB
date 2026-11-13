@@ -2,6 +2,7 @@ package com.waizusora.wdb.adb
 
 import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import io.github.rhythmcache.adb.io.RandomAccessSource
 import kotlinx.coroutines.flow.collect
@@ -206,12 +207,18 @@ class WirelessAdbManager(
         require(remotePath.startsWith("/") && remotePath.none { it.code == 0 }) {
             "Remote source must be an absolute device path."
         }
-        val output = appContext.contentResolver.openOutputStream(destination, "wt")
-            ?: throw IOException("Unable to open the selected destination.")
-        output.use { stream ->
-            var transferred = 0L
-            requireClient().sync.pull(remotePath, stream, onProgress = { transferred = it })
-            "Pulled $transferred bytes from $remotePath"
+        try {
+            val output = appContext.contentResolver.openOutputStream(destination, "wt")
+                ?: throw IOException("Unable to open the selected destination.")
+            output.use { stream ->
+                var transferred = 0L
+                requireClient().sync.pull(remotePath, stream, onProgress = { transferred = it })
+                "Pulled $transferred bytes from $remotePath"
+            }
+        } catch (error: Throwable) {
+            // A cancelled or failed sync must not leave a truncated file that looks complete.
+            runCatching { DocumentsContract.deleteDocument(appContext.contentResolver, destination) }
+            throw error
         }
     }
 
@@ -219,10 +226,26 @@ class WirelessAdbManager(
         require(remotePath.startsWith("/") && remotePath.none { it.code == 0 }) { "Remote source must be an absolute device path." }
         val directory = DocumentFile.fromTreeUri(appContext, treeUri) ?: throw IOException("The saved transfer directory is no longer accessible.")
         if (!directory.isDirectory || !directory.canWrite()) throw IOException("The selected transfer directory is not writable.")
-        val fileName = remotePath.substringAfterLast("/").ifBlank { "adb-download.bin" }.replace(Regex("[^A-Za-z0-9._-]"), "_")
-        val destination = directory.createFile("application/octet-stream", fileName) ?: throw IOException("Unable to create a file in the selected transfer directory.")
-        val output = appContext.contentResolver.openOutputStream(destination.uri, "wt") ?: throw IOException("Unable to open the created destination file.")
-        output.use { stream -> var transferred = 0L; requireClient().sync.pull(remotePath, stream, onProgress = { transferred = it; onProgress(it) }); "Pulled $transferred bytes to ${destination.name ?: fileName}" }
+        val fileName = remotePath.substringAfterLast("/")
+            .ifBlank { "adb-download.bin" }
+            .replace(Regex("[^A-Za-z0-9._-]"), "_")
+            .takeUnless { it == "." || it == ".." }
+            ?: "adb-download.bin"
+        val destination = directory.createFile("application/octet-stream", fileName)
+            ?: throw IOException("Unable to create a file in the selected transfer directory.")
+        try {
+            val output = appContext.contentResolver.openOutputStream(destination.uri, "wt")
+                ?: throw IOException("Unable to open the created destination file.")
+            output.use { stream ->
+                var transferred = 0L
+                requireClient().sync.pull(remotePath, stream, onProgress = { transferred = it })
+                "Pulled $transferred bytes to ${destination.name ?: fileName}"
+            }
+        } catch (error: Throwable) {
+            // Delete partial SAF output on I/O failure or coroutine cancellation.
+            runCatching { destination.delete() }
+            throw error
+        }
     }
     suspend fun addForward(localPort: Int, devicePort: Int): String = withContext(Dispatchers.IO) {
         validatePort(localPort)
