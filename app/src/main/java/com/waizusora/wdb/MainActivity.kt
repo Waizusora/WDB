@@ -8,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
@@ -403,7 +404,7 @@ private fun WdbApp(showPairInitially: Boolean) {
                 },
                 confirmButton = {
                     TextButton(
-                        enabled = !busy && address.isNotBlank() && pairPort.toIntOrNull() in 1..65535 &&
+                        enabled = !busy && address.isNotBlank() && pairPort.toIntOrNull()?.let { it in 1..65535 } == true &&
                             pairingCode.matches(Regex("[0-9]{6}")),
                         onClick = {
                             busy = true
