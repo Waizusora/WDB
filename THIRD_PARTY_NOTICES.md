@@ -4,7 +4,7 @@ WDB includes or depends on the following third-party components. Their respectiv
 
 | Component | Version | License | Project |
 | --- | --- | --- | --- |
-| adb-kt | 1.0.13 | Apache License 2.0 | https://github.com/rhythmcache/adb-kt |
+| adb-kt | 1.0.13 (commit 394dea235b4b) | Apache License 2.0 | https://github.com/rhythmcache/adb-kt |
 | spake2-kt | v1.0.2 | Apache License 2.0 | https://github.com/rhythmcache/spake2-kt |
 | Bouncy Castle (bcprov, bcpkix, bctls) | 1.85 | Bouncy Castle License (MIT-style) | https://www.bouncycastle.org/ |
 | Okio | 3.18.1 | Apache License 2.0 | https://github.com/square/okio |
