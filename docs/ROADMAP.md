@@ -1,29 +1,32 @@
 # Implementation roadmap
 
-## Foundation
+## Implemented
 
 - [x] Android application identity and Gradle project
-- [x] Minimal dark Material 3 interface
-- [x] Developer Options hand-off
-- [x] Foreground session lifecycle and partial wake lock
-- [x] Settings entry points for overlay and battery optimization
-- [x] Floating overlay shortcut that reopens the in-app pairing form
-- [x] Launcher vector icon
-- [x] Initial Apache License 2.0 and English technical documentation
+- [x] Minimal dark Material 3 interface and launcher icon
+- [x] Developer Options hand-off and optional floating pairing shortcut
+- [x] Foreground session lifecycle, notification, and partial wake lock
+- [x] User-controlled overlay and battery-optimization settings
+- [x] ADB SPAKE2 pairing using the displayed six-digit code
+- [x] mDNS discovery of separate pairing and ADB connection endpoints
+- [x] Authenticated ADB TLS transport and shell handshake validation
+- [x] AES-GCM encrypted host private-key persistence using Android Keystore
+- [x] Checkable shell-command catalog
+- [x] PID lookup using validated package/process names and `pidof`
+- [x] Logcat snapshot capture with text filtering and bounded display output
+- [x] Apache License 2.0 and English technical documentation
 
-## Required before claiming functional ADB support
+## Remaining work
 
-- [ ] Implement ADB pairing protocol with the pairing endpoint and user-provided pairing code
-- [ ] Persist device pairing identity securely using Android Keystore-backed storage
-- [ ] Implement authenticated ADB TLS connection and transport state machine
-- [ ] Add a device discovery workflow for wireless debugging endpoints where Android APIs permit it
-- [ ] Add command catalog with validated argument models and per-command selection
-- [ ] Add Logcat streaming, filtering, cancellation, and bounded output buffering
-- [ ] Add PID lookup using `pidof` and package-name search with safe argument handling
-- [ ] Add connection, pairing, and command protocol tests
-- [ ] Verify foreground-service behavior and notification permission on API 26–35
-- [ ] Build and run instrumentation tests on physical Android devices
+- [ ] Add live Logcat streaming with cancellation and bounded backpressure
+- [ ] Expand the command catalog to cover additional ADB host and device command families
+- [ ] Add command-specific argument forms and explicit confirmation for destructive operations
+- [ ] Add pairing, TLS reconnect, shell, and mDNS unit/instrumentation tests
+- [ ] Add UI tests for pairing, permission denial, reconnect, and Stop behavior
+- [ ] Verify API 26–35 behavior on physical devices and OEM variants
+- [ ] Add a reproducible Gradle wrapper and release build/signing documentation
+- [ ] Add dependency license and vulnerability checks to CI
 
 ## Acceptance criteria
 
-WDB must never show a successful pairing or connected status without protocol confirmation. Start must be disabled until an authenticated ADB transport is ready. Stop must close active sockets and streams, cancel logcat readers, release wake locks, and stop the foreground service.
+WDB must never show a successful pairing or connected status without protocol confirmation. Start must be disabled until an authenticated ADB transport is ready. Stop must close active sockets and streams, cancel command work, release wake locks, and stop the foreground service.
