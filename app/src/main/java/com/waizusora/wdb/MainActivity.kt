@@ -549,10 +549,10 @@ private fun WdbApp(showPairInitially: Boolean) {
                                                     }
                                                     if (chunk is ShellChunk.Exit) streamingLogcat = false
                                                 }
-                                                statusMessage = "Logcat stream saved: ${logcatFile?.name ?: "WDB_Logcat.txt"}"
+                                                statusMessage = "Logcat stream saved: ${requireNotNull(logcatFile).name}"
                                             } catch (cancelled: CancellationException) {
                                                 if (savedBytes == 0L) logcatFile?.delete()
-                                                else statusMessage = "Partial Logcat saved: ${logcatFile.name}"
+                                                else statusMessage = "Partial Logcat saved: ${requireNotNull(logcatFile).name}"
                                                 throw cancelled
                                             } catch (error: Exception) {
                                                 if (savedBytes == 0L) logcatFile?.delete()
