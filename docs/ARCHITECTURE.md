@@ -6,7 +6,7 @@
 - Display name: WDB
 - UI: Kotlin, Jetpack Compose, Material 3
 - Minimum Android version: API 26
-- Compile SDK: API 36
+- Compile SDK: API 37
 - Target SDK: API 35
 
 ## Components
@@ -20,7 +20,7 @@
 
 ## Pairing and connection
 
-The application uses Kadb 2.1.4, an Apache-2.0 Kotlin ADB client.
+The application uses Kadb 2.1.5, an Apache-2.0 Kotlin ADB client.
 
 1. `Kadb.pair(host, port, pairingCode)` performs the Wireless Debugging SPAKE2 pairing exchange over TLS.
 2. `KadbMdnsAndroid` discovers `_adb-tls-pairing._tcp` and `_adb-tls-connect._tcp` service endpoints using Android `NsdManager`.
@@ -39,7 +39,7 @@ The current command catalog executes a bounded set of shell commands through the
 
 ## Background execution
 
-The foreground service is started only after an explicit user action and a verified transport. A partial wake lock is acquired while the service is active and released on stop or destruction. Android may still terminate the process, and users may force-stop it. Battery-optimization exemption and overlay access are optional user-granted capabilities.
+The foreground service is started only after an explicit user action and a verified transport. A partial wake lock is acquired while the service is active and released on stop or destruction. The floating pairing shortcut uses its own foreground service while visible. Android may still terminate the process, and users may force-stop it. Battery-optimization exemption and overlay access are optional user-granted capabilities.
 
 ## Security requirements
 
