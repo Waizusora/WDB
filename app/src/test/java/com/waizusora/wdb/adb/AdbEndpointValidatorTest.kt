@@ -41,4 +41,21 @@ class AdbEndpointValidatorTest {
             AdbEndpointValidator.validate("", 5555)
         }
     }
+    @Test
+    fun rejectsMalformedIpv6Addresses() {
+        assertThrows(IllegalArgumentException::class.java) {
+            AdbEndpointValidator.validate("::::", 5555)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            AdbEndpointValidator.validate("12345::1", 5555)
+        }
+    }
+
+    @Test
+    fun rejectsZeroPort() {
+        assertThrows(IllegalArgumentException::class.java) {
+            AdbEndpointValidator.validate("192.168.1.42", 0)
+        }
+    }
+
 }
