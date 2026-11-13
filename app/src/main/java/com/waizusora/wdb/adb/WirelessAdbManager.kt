@@ -212,7 +212,7 @@ class WirelessAdbManager(
                 ?: throw IOException("Unable to open the selected destination.")
             output.use { stream ->
                 var transferred = 0L
-                requireClient().sync.pull(remotePath, stream, onProgress = { transferred = it })
+                requireClient().sync.pull(remotePath, stream, onProgress = { transferred = it; onProgress(it) })
                 "Pulled $transferred bytes from $remotePath"
             }
         } catch (error: Throwable) {
