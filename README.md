@@ -21,7 +21,7 @@ WDB is an Android Wireless Debugging client with a minimal Material 3 interface.
 - Optional floating pairing shortcut, gated by user-granted overlay access.
 - Checkable shell-command catalog, `pidof` package lookup, and Logcat snapshot capture with text filtering.
 
-Logcat capture currently uses `logcat -d` to retrieve a bounded snapshot. Continuous streaming, additional command families, and automated protocol tests remain under development.
+Logcat capture currently uses `logcat -d -t 500` to retrieve the most recent 500 lines as a bounded snapshot. Continuous streaming, additional command families, and automated protocol tests remain under development.
 
 ## Build requirements
 
