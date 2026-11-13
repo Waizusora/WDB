@@ -2,6 +2,7 @@ package com.waizusora.wdb.adb
 
 import android.content.Context
 import android.net.Uri
+import androidx.documentfile.provider.DocumentFile
 import io.github.rhythmcache.adb.io.RandomAccessSource
 import kotlinx.coroutines.flow.collect
 import io.github.rhythmcache.adb.AdbClient
@@ -15,6 +16,8 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import java.io.Closeable
 import java.io.IOException
+import java.io.File
+import java.util.zip.ZipInputStream
 
 /**
  * Coordinates secure Wireless Debugging pairing, mDNS discovery, and ADB TLS sessions.
@@ -100,22 +103,76 @@ class WirelessAdbManager(
     }
 
 
-    suspend fun installApk(uri: Uri): String = withContext(Dispatchers.IO) {
+    suspend fun installApks(uris: List<Uri>, onProgress: (String) -> Unit = {}): String = withContext(Dispatchers.IO) {
+        require(uris.isNotEmpty()) { "Select at least one APK file." }
         val client = requireClient()
-        val descriptor = appContext.contentResolver.openFileDescriptor(uri, "r")
-            ?: throw IOException("Unable to open the selected APK.")
-        try {
-            val source = RandomAccessSource.of(descriptor.fileDescriptor, descriptor.statSize)
-            var latest = "Preparing APK installation…"
-            client.install.install(source, flags = listOf("-r")).collect { progress ->
-                latest = "${progress.statusText} (${progress.percentage.toInt()}%)"
-            }
-            latest
-        } finally {
-            descriptor.close()
+        val selectedName = displayName(uris.singleOrNull())
+        val archiveUri = uris.singleOrNull()?.takeIf { selectedName?.substringAfterLast(".", "")?.lowercase() in setOf("apks", "xapk", "apkm", "zip") }
+        if (archiveUri != null) {
+            val extracted = extractSplitApks(archiveUri)
+            try {
+                val sources = extracted.map { file -> file.name to RandomAccessSource.of(file) }
+                var latest = "Preparing split APK installation…"
+                client.install.installMultiple(sources, flags = listOf("-r")).collect { progress ->
+                    latest = "${progress.statusText} (${progress.percentage.toInt()}%)"
+                    onProgress(latest)
+                }
+                latest
+            } finally { extracted.forEach { runCatching { it.delete() } } }
+        } else {
+            val descriptors = mutableListOf<android.os.ParcelFileDescriptor>()
+            try {
+                val sources = uris.mapIndexed { index, uri ->
+                    val descriptor = appContext.contentResolver.openFileDescriptor(uri, "r") ?: throw IOException("Unable to open selected APK file.")
+                    descriptors += descriptor
+                    val name = displayName(uri) ?: "split_$index.apk"
+                    if (!name.endsWith(".apk", ignoreCase = true)) throw IOException("Select APK files, or one .apks/.xapk/.apkm archive.")
+                    name to RandomAccessSource.of(descriptor.fileDescriptor, descriptor.statSize)
+                }.sortedBy { if (it.first.contains("base", ignoreCase = true)) 0 else 1 }
+                var latest = "Preparing APK installation…"
+                val flow = if (sources.size == 1) client.install.install(sources.single().second, flags = listOf("-r")) else client.install.installMultiple(sources, flags = listOf("-r"))
+                flow.collect { progress -> latest = "${progress.statusText} (${progress.percentage.toInt()}%)"; onProgress(latest) }
+                latest
+            } finally { descriptors.forEach { runCatching { it.close() } } }
         }
     }
 
+    private fun displayName(uri: Uri?): String? {
+        if (uri == null) return null
+        appContext.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) { val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME); if (index >= 0) return cursor.getString(index) }
+        }
+        return uri.lastPathSegment
+    }
+
+    private fun extractSplitApks(uri: Uri): List<File> {
+        val directory = File(appContext.cacheDir, "wdb-split-apks")
+        directory.mkdirs()
+        directory.listFiles()?.forEach { it.delete() }
+        val extracted = mutableListOf<File>()
+        var totalBytes = 0L
+        val input = appContext.contentResolver.openInputStream(uri) ?: throw IOException("Unable to open the split APK archive.")
+        input.use { raw -> ZipInputStream(raw).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                val name = entry.name
+                val lower = name.lowercase()
+                if (!entry.isDirectory && lower.endsWith(".apk") && !lower.startsWith("standalones/") && !lower.contains("/standalones/")) {
+                    if (extracted.size >= 32) throw IOException("Split archive contains more than 32 APK files.")
+                    val safeName = name.substringAfterLast("/").replace(Regex("[^A-Za-z0-9._-]"), "_")
+                    val target = File(directory, "${extracted.size}_$safeName")
+                    target.outputStream().buffered().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) { val count = zip.read(buffer); if (count < 0) break; totalBytes += count; if (totalBytes > 1_500_000_000L) throw IOException("Split APK archive exceeds the 1.5 GB safety limit."); output.write(buffer, 0, count) }
+                    }
+                    if (target.length() > 0) extracted += target else target.delete()
+                }
+                zip.closeEntry()
+            }
+        } }
+        if (extracted.isEmpty()) throw IOException("No installable APK files were found in the selected archive.")
+        return extracted.sortedBy { if (it.name.contains("base", ignoreCase = true)) 0 else 1 }
+    }
     suspend fun uninstallPackage(packageName: String): String = withContext(Dispatchers.IO) {
         require(packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))) {
             "Enter a valid Android package name."
@@ -127,7 +184,7 @@ class WirelessAdbManager(
         result.stdoutText.trim()
     }
 
-    suspend fun pushFile(uri: Uri, remotePath: String): String = withContext(Dispatchers.IO) {
+    suspend fun pushFile(uri: Uri, remotePath: String, onProgress: (Long) -> Unit = {}): String = withContext(Dispatchers.IO) {
         require(remotePath.startsWith("/") && remotePath.none { it.code == 0 }) {
             "Remote destination must be an absolute device path."
         }
@@ -135,12 +192,12 @@ class WirelessAdbManager(
             ?: throw IOException("Unable to open the selected source file.")
         input.use { stream ->
             var transferred = 0L
-            requireClient().sync.push(stream, remotePath, onProgress = { transferred = it })
+            requireClient().sync.push(stream, remotePath, onProgress = { transferred = it; onProgress(it) })
             "Pushed $transferred bytes to $remotePath"
         }
     }
 
-    suspend fun pullFile(remotePath: String, destination: Uri): String = withContext(Dispatchers.IO) {
+    suspend fun pullFile(remotePath: String, destination: Uri, onProgress: (Long) -> Unit = {}): String = withContext(Dispatchers.IO) {
         require(remotePath.startsWith("/") && remotePath.none { it.code == 0 }) {
             "Remote source must be an absolute device path."
         }
@@ -153,6 +210,15 @@ class WirelessAdbManager(
         }
     }
 
+    suspend fun pullFileToDirectory(remotePath: String, treeUri: Uri, onProgress: (Long) -> Unit = {}): String = withContext(Dispatchers.IO) {
+        require(remotePath.startsWith("/") && remotePath.none { it.code == 0 }) { "Remote source must be an absolute device path." }
+        val directory = DocumentFile.fromTreeUri(appContext, treeUri) ?: throw IOException("The saved transfer directory is no longer accessible.")
+        if (!directory.isDirectory || !directory.canWrite()) throw IOException("The selected transfer directory is not writable.")
+        val fileName = remotePath.substringAfterLast("/").ifBlank { "adb-download.bin" }.replace(Regex("[^A-Za-z0-9._-]"), "_")
+        val destination = directory.createFile("application/octet-stream", fileName) ?: throw IOException("Unable to create a file in the selected transfer directory.")
+        val output = appContext.contentResolver.openOutputStream(destination.uri, "wt") ?: throw IOException("Unable to open the created destination file.")
+        output.use { stream -> var transferred = 0L; requireClient().sync.pull(remotePath, stream, onProgress = { transferred = it; onProgress(it) }); "Pulled $transferred bytes to ${destination.name ?: fileName}" }
+    }
     suspend fun addForward(localPort: Int, devicePort: Int): String = withContext(Dispatchers.IO) {
         validatePort(localPort)
         validatePort(devicePort)
