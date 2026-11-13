@@ -495,14 +495,15 @@ private fun WdbApp(showPairInitially: Boolean) {
                                         var snapshotFile: DocumentFile? = null
                                         try {
                                             val snapshot = manager.execute("logcat -b all -d -t 500 -v threadtime")
-                                            snapshotFile = createLogcatFile()
+                                            val file = createLogcatFile()
+                                            snapshotFile = file
                                             withContext(Dispatchers.IO) {
-                                                context.contentResolver.openOutputStream(snapshotFile.uri, "wt")?.use {
+                                                context.contentResolver.openOutputStream(file.uri, "wt")?.use {
                                                     it.write(snapshot.toByteArray(Charsets.UTF_8))
                                                 } ?: throw IllegalStateException("Unable to open the Logcat output file.")
                                             }
                                             logcatOutput = snapshot.takeLast(60_000)
-                                            statusMessage = "Logcat snapshot saved: ${snapshotFile.name}"
+                                            statusMessage = "Logcat snapshot saved: ${file.name}"
                                         } catch (cancelled: CancellationException) {
                                             snapshotFile?.delete()
                                             throw cancelled
@@ -529,9 +530,10 @@ private fun WdbApp(showPairInitially: Boolean) {
                                             var logcatFile: DocumentFile? = null
                                             var savedBytes = 0L
                                             try {
-                                                logcatFile = createLogcatFile()
+                                                val file = createLogcatFile()
+                                                logcatFile = file
                                                 output = withContext(Dispatchers.IO) {
-                                                    context.contentResolver.openOutputStream(logcatFile.uri, "wt")
+                                                    context.contentResolver.openOutputStream(file.uri, "wt")
                                                         ?: throw IllegalStateException("Unable to open the Logcat output file.")
                                                 }
                                                 manager.logcatFlow().collect { chunk ->
