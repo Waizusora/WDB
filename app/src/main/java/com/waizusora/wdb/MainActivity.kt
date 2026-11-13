@@ -95,7 +95,6 @@ private fun WdbApp(showPairInitially: Boolean) {
     var showPair by remember { mutableStateOf(showPairInitially) }
     var address by remember { mutableStateOf("") }
     var pairPort by remember { mutableStateOf("") }
-    var connectPort by remember { mutableStateOf("") }
     var pairingCode by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var commandOutput by remember { mutableStateOf("") }
@@ -379,7 +378,7 @@ private fun WdbApp(showPairInitially: Boolean) {
                                 busy = true
                                 scope.launch {
                                     logcatOutput = runCatching {
-                                        manager.execute("logcat -d -v threadtime")
+                                        manager.execute("logcat -d -t 500 -v threadtime")
                                     }.getOrElse { it.message ?: "Logcat capture failed." }.takeLast(60_000)
                                     busy = false
                                 }
