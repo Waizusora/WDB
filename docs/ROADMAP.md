@@ -24,10 +24,12 @@
 
 - [x] Add initial JVM tests for numeric ADB endpoint validation
 - [ ] Add pairing, TLS reconnect, shell streaming, and mDNS instrumentation tests
+- [ ] Add progress reporting and cancellation for large file transfers
+- [ ] Add active forward/reverse rule listing and cleanup UI
 - [ ] Add UI tests for pairing, permission denial, reconnect, Logcat cancellation, and Stop behavior
 - [ ] Verify API 26–35 behavior on physical devices and OEM variants
-- [x] Add ADB host-side package install/uninstall workflows
-- [x] Add ADB sync-based file push and pull workflows
+- [x] Add ADB host-side package install/uninstall workflows, including split APK bundles
+- [x] Add ADB sync-based file push and pull workflows with a persistent Settings directory
 - [x] Add ADB port forwarding and reverse forwarding
 - [ ] Add command-specific argument forms and explicit confirmation for destructive operations
 - [ ] Add a reproducible Gradle wrapper and release build/signing validation
