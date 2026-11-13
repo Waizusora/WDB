@@ -1,12 +1,11 @@
 package com.waizusora.wdb
 
 import android.app.Application
-import com.flyfishxu.kadb.cert.KadbCert
 import com.waizusora.wdb.adb.WirelessAdbManager
-import com.waizusora.wdb.security.EncryptedAdbPrivateKeyStore
+import com.waizusora.wdb.security.EncryptedAdbKeyProvider
 
 /**
- * Owns the process-wide ADB manager and configures encrypted host identity before use.
+ * Owns the process-wide ADB manager and encrypted host identity.
  * The manager outlives Activity recreation so a foreground session is not UI-owned.
  */
 class WdbApplication : Application() {
@@ -15,7 +14,7 @@ class WdbApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        KadbCert.configure(store = EncryptedAdbPrivateKeyStore(this))
-        adbManager = WirelessAdbManager(this)
+        val keyProvider = EncryptedAdbKeyProvider(this)
+        adbManager = WirelessAdbManager(this, keyProvider)
     }
 }
