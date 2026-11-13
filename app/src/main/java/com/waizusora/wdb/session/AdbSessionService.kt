@@ -43,7 +43,7 @@ class AdbSessionService : Service() {
         AdbSessionState.setRunning(true)
         if (wakeLock?.isHeld != true) {
             val manager = getSystemService(POWER_SERVICE) as PowerManager
-            wakeLock = manager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:WdbSession")
+            wakeLock = manager.newWakeLock(PowerManager.FULL_WAKE_LOCK, "$packageName:WdbSession")
                 .apply { setReferenceCounted(false); acquire() }
         }
     }
