@@ -11,6 +11,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
+import androidx.documentfile.provider.DocumentFile
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -35,6 +36,8 @@ import com.waizusora.wdb.session.AdbSessionState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import io.github.rhythmcache.adb.ShellChunk
 
 private data class AdbCommandOption(
@@ -141,6 +144,17 @@ private fun WdbApp(showPairInitially: Boolean) {
     var logcatOutput by remember { mutableStateOf("") }
     var streamingLogcat by remember { mutableStateOf(false) }
     var logcatJob by remember { mutableStateOf<Job?>(null) }
+
+    fun createLogcatFile(): Pair<Uri, String> {
+        val treeUri = transferDirectoryUri ?: throw IllegalStateException("Select a transfer directory in Settings before saving Logcat.")
+        val directory = DocumentFile.fromTreeUri(context, treeUri)
+            ?: throw IllegalStateException("The selected transfer directory is unavailable.")
+        if (!directory.isDirectory || !directory.canWrite()) throw IllegalStateException("The selected transfer directory is not writable.")
+        val stamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US).format(java.util.Date())
+        val name = "WDB_Logcat_$stamp.txt"
+        val file = directory.createFile("text/plain", name) ?: throw IllegalStateException("Unable to create the Logcat file.")
+        return file.uri to name
+    }
 
     LaunchedEffect(manager) { manager.startDiscovery() }
     LaunchedEffect(discovery.pairDevices, showPair) {
@@ -473,20 +487,28 @@ private fun WdbApp(showPairInitially: Boolean) {
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Button(
-                                enabled = connectedModel != null && !busy && !streamingLogcat,
+                                enabled = connectedModel != null && !busy && !streamingLogcat && transferDirectoryUri != null,
                                 onClick = {
                                     busy = true
                                     scope.launch {
-                                        logcatOutput = runCatching {
-                                            manager.execute("logcat -d -t 500 -v threadtime")
-                                        }.getOrElse { it.message ?: "Logcat capture failed." }.takeLast(60_000)
-                                        busy = false
+                                        try {
+                                            val snapshot = manager.execute("logcat -b all -d -t 500 -v threadtime")
+                                            val (uri, name) = createLogcatFile()
+                                            withContext(Dispatchers.IO) {
+                                                context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(snapshot.toByteArray(Charsets.UTF_8)) }
+                                                    ?: throw IllegalStateException("Unable to open the Logcat output file.")
+                                            }
+                                            logcatOutput = snapshot.takeLast(60_000)
+                                            statusMessage = "Logcat snapshot saved: $name"
+                                        } catch (error: Throwable) {
+                                            statusMessage = "Logcat capture failed: ${error.message}"
+                                        } finally { busy = false }
                                     }
                                 },
                                 modifier = Modifier.weight(1f)
-                            ) { Text("Capture") }
+                            ) { Text("Capture & save") }
                             OutlinedButton(
-                                enabled = connectedModel != null && !busy,
+                                enabled = connectedModel != null && !busy && (streamingLogcat || transferDirectoryUri != null),
                                 onClick = {
                                     if (streamingLogcat) {
                                         logcatJob?.cancel()
@@ -496,23 +518,35 @@ private fun WdbApp(showPairInitially: Boolean) {
                                         logcatOutput = ""
                                         streamingLogcat = true
                                         logcatJob = scope.launch {
+                                            var output: java.io.OutputStream? = null
+                                            var savedName = ""
                                             try {
-                                                manager.logcatFlow().collect { chunk ->
-                                                    when (chunk) {
-                                                        is ShellChunk.Stdout ->
-                                                            logcatOutput = (logcatOutput + chunk.text).takeLast(60_000)
-                                                        is ShellChunk.Stderr ->
-                                                            logcatOutput = (logcatOutput + chunk.text).takeLast(60_000)
-                                                        is ShellChunk.Exit -> streamingLogcat = false
-                                                    }
+                                                val (uri, name) = createLogcatFile()
+                                                savedName = name
+                                                output = withContext(Dispatchers.IO) {
+                                                    context.contentResolver.openOutputStream(uri, "wt")
+                                                        ?: throw IllegalStateException("Unable to open the Logcat output file.")
                                                 }
+                                                manager.logcatFlow().collect { chunk ->
+                                                    val text = when (chunk) {
+                                                        is ShellChunk.Stdout -> chunk.text
+                                                        is ShellChunk.Stderr -> chunk.text
+                                                        is ShellChunk.Exit -> ""
+                                                    }
+                                                    if (text.isNotEmpty()) {
+                                                        logcatOutput = (logcatOutput + text).takeLast(60_000)
+                                                        withContext(Dispatchers.IO) { output?.write(text.toByteArray(Charsets.UTF_8)); output?.flush() }
+                                                    }
+                                                    if (chunk is ShellChunk.Exit) streamingLogcat = false
+                                                }
+                                                statusMessage = "Logcat stream saved: $savedName"
                                             } catch (cancelled: CancellationException) {
                                                 throw cancelled
                                             } catch (error: Throwable) {
-                                                logcatOutput = (logcatOutput + "\n" +
-                                                    (error.message ?: "Logcat stream failed.")).takeLast(60_000)
-                                                streamingLogcat = false
+                                                logcatOutput = (logcatOutput + "\\n" + (error.message ?: "Logcat stream failed.")).takeLast(60_000)
+                                                statusMessage = "Logcat save/stream failed: ${error.message}"
                                             } finally {
+                                                withContext(Dispatchers.IO) { runCatching { output?.close() } }
                                                 streamingLogcat = false
                                             }
                                         }
