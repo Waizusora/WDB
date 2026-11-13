@@ -74,12 +74,15 @@ class FloatingPairService : Service() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val brand = TextView(this).apply {
-            text = "WDB"
+        pairButton = TextView(this).apply {
+            text = "Pair"
             textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.WHITE)
-            letterSpacing = 0.08f
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(18, 25, 38))
+            setPadding(dp(24), dp(10), dp(24), dp(10))
+            background = roundedBackground(Color.rgb(183, 200, 255), 14f)
+            setOnClickListener { setExpanded(!expanded) }
         }
         val spacer = android.view.View(this)
         val close = TextView(this).apply {
@@ -90,30 +93,16 @@ class FloatingPairService : Service() {
             setPadding(dp(12), 0, dp(2), 0)
             setOnClickListener { stopSelf() }
         }
-        header.addView(brand)
-        header.addView(spacer, LinearLayout.LayoutParams(0, dp(34), 1f))
+        header.addView(pairButton)
+        header.addView(spacer, LinearLayout.LayoutParams(0, dp(42), 1f))
         header.addView(close)
         panel.addView(header)
-
-        pairButton = TextView(this).apply {
-            text = "Pair"
-            textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
-            setTextColor(Color.rgb(18, 25, 38))
-            setPadding(dp(22), dp(10), dp(22), dp(10))
-            background = roundedBackground(Color.rgb(183, 200, 255), 14f)
-            setOnClickListener { setExpanded(!expanded) }
-        }
-        panel.addView(pairButton, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(42)
-        ).apply { topMargin = dp(4) })
 
         val form = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             visibility = android.view.View.GONE
         }
-        form.addView(label("IP address"))
+        form.addView(label("Pair device"))\n        form.addView(label("IP address"))
         addressInput = input("192.168.1.10", android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI)
         form.addView(addressInput, fieldParams())
         form.addView(label("Port"))
@@ -169,7 +158,7 @@ class FloatingPairService : Service() {
             @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
         }
         windowParams = WindowManager.LayoutParams(
-            dp(190), WindowManager.LayoutParams.WRAP_CONTENT, type,
+            dp(150), WindowManager.LayoutParams.WRAP_CONTENT, type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
@@ -189,7 +178,7 @@ class FloatingPairService : Service() {
         form.visibility = if (value) android.view.View.VISIBLE else android.view.View.GONE
         pairButton.visibility = if (value) android.view.View.GONE else android.view.View.VISIBLE
         windowParams?.let { params ->
-            params.width = dp(if (value) 300 else 190)
+            params.width = dp(if (value) 300 else 150)
             params.flags = if (value) {
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
             } else {
