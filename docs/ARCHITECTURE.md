@@ -41,7 +41,7 @@ Live Logcat uses `logcat -b all -v threadtime` through adb-kt's Shell V2 Flow AP
 
 ## Device management, file sync, and port mapping
 
-`WirelessAdbManager` uses adb-kt native ADB services for streaming APK installation, package removal, ADB Sync push/pull, host-side TCP forwarding, and device-side reverse forwarding. APK and file selection use Android's Storage Access Framework; no broad storage permission is required. Uninstall requires an explicit confirmation. File paths must be absolute device paths, package names are validated, and TCP ports are constrained to 1–65535.
+`WirelessAdbManager` uses adb-kt native ADB services for streaming APK installation, package removal, ADB Sync push/pull, host-side TCP forwarding, and device-side reverse forwarding. APK and file selection use Android's Storage Access Framework; no broad storage permission is required. Settings can persist a user-selected local transfer directory using a tree URI, allowing WDB to browse its files for push and create pulled files in that folder. Split APK files can be selected together or installed from `.apks`, `.xapk`, and `.apkm` ZIP archives; archive extraction is bounded to 32 APKs and 1.5 GB, and temporary files are removed after installation. Uninstall requires an explicit confirmation. File paths must be absolute device paths, package names are validated, and TCP ports are constrained to 1–65535.
 
 ## Background execution and power
 
