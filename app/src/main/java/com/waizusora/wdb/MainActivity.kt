@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Article
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -109,6 +110,7 @@ private fun WdbApp(showPairInitially: Boolean) {
     }
 
     var showSettings by remember { mutableStateOf(false) }
+    var showOpenSourceLicenses by remember { mutableStateOf(false) }
     var showPair by remember { mutableStateOf(showPairInitially) }
     var address by remember { mutableStateOf("") }
     var pairPort by remember { mutableStateOf("") }
@@ -419,8 +421,31 @@ private fun WdbApp(showPairInitially: Boolean) {
 
                 ElevatedCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Logcat capture", style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.Article, contentDescription = "Logcat", modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Logcat", style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.weight(1f))
+                            TextButton(enabled = !busy, onClick = {
+                                if (!manager.isConnected()) {
+                                    statusMessage = "Clear Logcat: device is not connected."
+                                } else {
+                                    busy = true
+                                    scope.launch {
+                                        val result = runCatching { manager.execute("logcat -c") }
+                                        if (result.isSuccess && !result.getOrThrow().contains("[exit code")) {
+                                            logcatOutput = ""
+                                            statusMessage = "Logcat buffer cleared successfully."
+                                        } else {
+                                            statusMessage = "Clear Logcat failed: " +
+                                                (result.getOrNull() ?: result.exceptionOrNull()?.message ?: "ADB command failed.")
+                                        }
+                                        busy = false
+                                    }
+                                }
+                            }) { Text("Clear Logcat") }
+                        }
                         OutlinedTextField(
                             value = logcatFilter,
                             onValueChange = { logcatFilter = it },
@@ -555,7 +580,14 @@ private fun WdbApp(showPairInitially: Boolean) {
                                 Uri.parse("package:${context.packageName}"))
                             runCatching { context.startActivity(intent) }
                         }, modifier = Modifier.fillMaxWidth()) { Text("Request exemption") }
-                        Text("A foreground service and partial wake lock improve session continuity but cannot prevent force-stop or guarantee process survival.",
+                        OutlinedButton(
+                            onClick = {
+                                showSettings = false
+                                showOpenSourceLicenses = true
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Open Source Licenses") }
+                        Text("WDB uses a full wake lock while an active session is running. This keeps the display awake and increases battery consumption. Android may still terminate a process or honor a user force-stop.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -565,5 +597,43 @@ private fun WdbApp(showPairInitially: Boolean) {
                 }
             )
         }
+        if (showOpenSourceLicenses) {
+            AlertDialog(
+                onDismissRequest = { showOpenSourceLicenses = false },
+                title = { Text("Open Source Licenses") },
+                text = {
+                    Column(
+                        modifier = Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Text("Direct and resolved runtime dependencies", style = MaterialTheme.typography.bodySmall)
+                        LicenseEntry("adb-kt 1.0.13", "Copyright holders: adb-kt contributors", "Apache License 2.0", "https://github.com/rhythmcache/adb-kt")
+                        LicenseEntry("spake2-kt v1.0.2", "Copyright holders: spake2-kt contributors", "Apache License 2.0", "https://github.com/rhythmcache/spake2-kt")
+                        LicenseEntry("Bouncy Castle 1.85", "Copyright (c) 2000-2026 The Legion of the Bouncy Castle Inc.", "MIT License", "https://www.bouncycastle.org/")
+                        LicenseEntry("Okio 3.18.1", "Copyright Square, Inc. and Okio contributors", "Apache License 2.0", "https://github.com/square/okio")
+                        LicenseEntry("Kotlinx Coroutines 1.11.0", "Copyright JetBrains s.r.o. and Kotlinx Coroutines contributors", "Apache License 2.0", "https://github.com/Kotlin/kotlinx.coroutines")
+                        LicenseEntry("AndroidX and Jetpack Compose", "Copyright The Android Open Source Project", "Apache License 2.0", "https://developer.android.com/jetpack")
+                        Text(
+                            "WDB does not relicense these components. Full license texts and notices are available in THIRD_PARTY_NOTICES.md and the upstream projects.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showOpenSourceLicenses = false }) { Text("Close") }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun LicenseEntry(name: String, copyright: String, license: String, url: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Text(copyright, style = MaterialTheme.typography.bodySmall)
+        Text(license, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        Text(url, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
