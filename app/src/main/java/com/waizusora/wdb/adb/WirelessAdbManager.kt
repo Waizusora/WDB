@@ -76,7 +76,11 @@ class WirelessAdbManager(context: Context) : Closeable {
         _connectedModel.value = null
     }
 
-    fun isConnected(): Boolean = activeClient?.connectionCheck() == true
+    fun isConnected(): Boolean {
+        val connected = activeClient?.connectionCheck() == true
+        if (!connected) _connectedModel.value = null
+        return connected
+    }
 
     override fun close() {
         runCatching { activeClient?.close() }
