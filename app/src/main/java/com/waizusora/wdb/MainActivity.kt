@@ -31,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.waizusora.wdb.session.AdbSessionService
+import com.waizusora.wdb.ui.theme.WdbTheme
 import com.waizusora.wdb.session.FloatingPairService
 import com.waizusora.wdb.session.AdbSessionState
 import kotlinx.coroutines.Job
@@ -159,14 +160,7 @@ private fun WdbApp() {
             .joinToString("\n")
     }
 
-    MaterialTheme(
-        colorScheme = darkColorScheme(
-            primary = androidx.compose.ui.graphics.Color(0xFFB7C8FF),
-            secondary = androidx.compose.ui.graphics.Color(0xFF8DD8C2),
-            surface = androidx.compose.ui.graphics.Color(0xFF171A20),
-            background = androidx.compose.ui.graphics.Color(0xFF101318)
-        )
-    ) {
+    WdbTheme {
         Scaffold(
             topBar = {
                 TopAppBar(
