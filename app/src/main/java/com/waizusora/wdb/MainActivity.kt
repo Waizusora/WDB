@@ -44,14 +44,28 @@ private data class AdbCommandOption(
 
 private val commandCatalog = listOf(
     AdbCommandOption("model", "Device model", "getprop ro.product.model"),
+    AdbCommandOption("fingerprint", "Build fingerprint", "getprop ro.build.fingerprint"),
+    AdbCommandOption("sdk", "Android SDK level", "getprop ro.build.version.sdk"),
     AdbCommandOption("android", "Android version", "getprop ro.build.version.release"),
     AdbCommandOption("serial", "Device serial", "getprop ro.serialno"),
     AdbCommandOption("packages", "Installed packages", "pm list packages"),
+    AdbCommandOption("third-party", "Third-party packages", "pm list packages -3"),
     AdbCommandOption("processes", "Process list", "ps -A"),
+    AdbCommandOption("cpu", "CPU information", "cat /proc/cpuinfo"),
+    AdbCommandOption("cpu-usage", "CPU usage", "dumpsys cpuinfo"),
     AdbCommandOption("battery", "Battery diagnostics", "dumpsys battery"),
     AdbCommandOption("memory", "Memory summary", "dumpsys meminfo"),
     AdbCommandOption("storage", "Storage usage", "df -h"),
+    AdbCommandOption("mounts", "Mounted filesystems", "mount"),
     AdbCommandOption("network", "Network interfaces", "ip addr"),
+    AdbCommandOption("routes", "Network routes", "ip route"),
+    AdbCommandOption("display-size", "Display size", "wm size"),
+    AdbCommandOption("display-density", "Display density", "wm density"),
+    AdbCommandOption("services", "System services", "service list"),
+    AdbCommandOption("activity-services", "Activity services", "dumpsys activity services"),
+    AdbCommandOption("notifications", "Notification state", "dumpsys notification"),
+    AdbCommandOption("alarms", "Alarm state", "dumpsys alarm"),
+    AdbCommandOption("properties", "System properties", "getprop"),
     AdbCommandOption("uptime", "Device uptime", "uptime")
 )
 
@@ -101,6 +115,7 @@ private fun WdbApp(showPairInitially: Boolean) {
     var pairingCode by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var commandOutput by remember { mutableStateOf("") }
+    var customCommand by remember { mutableStateOf("") }
     var selectedCommands by remember { mutableStateOf(setOf("model", "android")) }
     var packageName by remember { mutableStateOf("") }
     var pidOutput by remember { mutableStateOf("") }
@@ -348,6 +363,28 @@ private fun WdbApp(showPairInitially: Boolean) {
                                 Text(commandOutput, style = MaterialTheme.typography.bodySmall)
                             }
                         }
+                        HorizontalDivider()
+                        OutlinedTextField(
+                            value = customCommand,
+                            onValueChange = { customCommand = it.take(2_000) },
+                            label = { Text("Custom device shell command") },
+                            placeholder = { Text("dumpsys activity") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedButton(
+                            enabled = connectedModel != null && customCommand.isNotBlank() && !busy,
+                            onClick = {
+                                busy = true
+                                val command = customCommand
+                                scope.launch {
+                                    val result = runCatching { manager.execute(command) }
+                                        .getOrElse { it.message ?: "Command failed." }
+                                    commandOutput = "$ " + command + "\n" + result
+                                    busy = false
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Run custom command") }
                     }
                 }
 
