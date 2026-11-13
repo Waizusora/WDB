@@ -269,7 +269,7 @@ private fun WdbApp(showPairInitially: Boolean) {
                             showPair = true
                             if (Settings.canDrawOverlays(context)) {
                                 runCatching {
-                                    context.startService(Intent(context, FloatingPairService::class.java))
+                                    ContextCompat.startForegroundService(context, Intent(context, FloatingPairService::class.java))
                                 }
                             }
                             runCatching {
