@@ -19,8 +19,8 @@ android {
         applicationId = "com.waizusora.wdb"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.3.0"
+        versionCode = 2
+        versionName = "0.4.0"
     }
 
     buildFeatures { compose = true }
@@ -76,6 +76,8 @@ dependencies {
 
     // Pure Kotlin ADB protocol, SPAKE2 pairing, TLS 1.3, Shell V2, and streaming APIs.
     implementation("com.github.rhythmcache:adb-kt:394dea235b4bfb2ebbfba5a821bbe4f6cd59e460")
+
+    testImplementation("junit:junit:4.13.2")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
