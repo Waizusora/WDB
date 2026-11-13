@@ -7,7 +7,7 @@ WDB is an Android Wireless Debugging client with a minimal Material 3 interface.
 - Application ID: `com.waizusora.wdb`
 - Minimum Android version: API 26
 - Target SDK: API 35
-- Compile SDK: API 37
+- Compile SDK: API 36
 - Language and UI: Kotlin, Jetpack Compose, Material 3
 - ADB implementation: Kadb 2.1.5 (Apache License 2.0)
 
@@ -28,7 +28,7 @@ Logcat capture currently uses `logcat -d -t 500` to retrieve the most recent 500
 - Android Studio with Android Gradle Plugin 9.3.1 support
 - Gradle 9.5.0
 - JDK 17
-- Android SDK Platform 37
+- Android SDK Platform 36
 - Android device with Wireless debugging (Android 11 or later recommended)
 
 Open the repository in Android Studio and run the `app` configuration. If Gradle 9.5.0 is installed locally:
