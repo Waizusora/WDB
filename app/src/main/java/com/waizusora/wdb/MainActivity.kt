@@ -1,10 +1,15 @@
 package com.waizusora.wdb
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -64,6 +69,24 @@ private fun WdbApp(showPairInitially: Boolean) {
     val manager = remember(context) { (context.applicationContext as WdbApplication).adbManager }
     val discovery by manager.discoveryState.collectAsState()
     val scope = rememberCoroutineScope()
+    val startSession: () -> Unit = {
+        if (!manager.isConnected()) {
+            statusMessage = "ADB transport is no longer connected. Reconnect before starting the session."
+        } else {
+            ContextCompat.startForegroundService(
+                context, Intent(context, AdbSessionService::class.java)
+                    .setAction(AdbSessionService.ACTION_START)
+            )
+            sessionRunning = true
+            statusMessage = "Foreground ADB session started."
+        }
+    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) startSession()
+        else statusMessage = "Notification permission is required to show the active session notification."
+    }
 
     var showSettings by remember { mutableStateOf(false) }
     var showPair by remember { mutableStateOf(showPairInitially) }
@@ -141,12 +164,15 @@ private fun WdbApp(showPairInitially: Boolean) {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Button(
                                 onClick = {
-                                    ContextCompat.startForegroundService(
-                                        context, Intent(context, AdbSessionService::class.java)
-                                            .setAction(AdbSessionService.ACTION_START)
-                                    )
-                                    sessionRunning = true
-                                    statusMessage = "Foreground session started."
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                                        ContextCompat.checkSelfPermission(
+                                            context, Manifest.permission.POST_NOTIFICATIONS
+                                        ) != PackageManager.PERMISSION_GRANTED
+                                    ) {
+                                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                    } else {
+                                        startSession()
+                                    }
                                 },
                                 enabled = connectedModel != null && !sessionRunning && !busy,
                                 modifier = Modifier.weight(1f)
