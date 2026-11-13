@@ -20,7 +20,7 @@ WDB is an Android Wireless Debugging client with a minimal Material 3 interface.
 - AES-GCM encrypted ADB host identity using Android Keystore.
 - Foreground session service and partial wake lock.
 - Optional floating pairing shortcut, gated by user-granted overlay access.
-- Checkable shell-command catalog, `pidof` package lookup, and Logcat snapshot capture with text filtering.
+- Checkable shell-command catalog, custom shell-command entry, `pidof` package lookup, and Logcat snapshot/live capture with text filtering.
 
 Logcat supports a bounded 500-line snapshot and a cancellable live Shell V2 stream. Additional command families and automated protocol tests remain under development.
 
