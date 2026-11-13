@@ -38,6 +38,9 @@ class AdbSessionService : Service() {
         return START_NOT_STICKY
     }
 
+    // FULL_WAKE_LOCK is intentional: WDB's active-session contract keeps the display awake.
+    // Retain the behavior while suppressing the platform deprecation warning explicitly.
+    @Suppress("DEPRECATION")
     private fun startSession() {
         startForeground(NOTIFICATION_ID, buildNotification())
         AdbSessionState.setRunning(true)
