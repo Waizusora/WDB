@@ -1,8 +1,9 @@
-name: Android build
+name: Android build and release
 
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
 
@@ -15,6 +16,7 @@ concurrency:
 
 jobs:
   assemble:
+    name: Build debug APK
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -24,14 +26,14 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '9.5.0'
+          gradle-version: "9.5.0"
 
-      - name: Configure preinstalled Android SDK
+      - name: Configure Android SDK
         shell: bash
         run: |
           SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
@@ -55,3 +57,80 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+  release:
+    name: Publish signed GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      WDB_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      WDB_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      WDB_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - name: Check release signing secrets
+        id: signing
+        shell: bash
+        run: |
+          if [[ -n "$ANDROID_KEYSTORE_BASE64" && -n "$WDB_KEYSTORE_PASSWORD" && -n "$WDB_KEY_ALIAS" && -n "$WDB_KEY_PASSWORD" ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "All release signing values are configured."
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "Release skipped: one or more Android signing secrets are missing."
+          fi
+
+      - name: Check out source
+        if: steps.signing.outputs.available == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        if: steps.signing.outputs.available == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        if: steps.signing.outputs.available == 'true'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "9.5.0"
+
+      - name: Configure Android SDK
+        if: steps.signing.outputs.available == 'true'
+        shell: bash
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)"
+          test -x "$SDKMANAGER"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+          set +o pipefail
+          yes | "$SDKMANAGER" --licenses
+          set -o pipefail
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Restore signing keystore
+        if: steps.signing.outputs.available == 'true'
+        shell: bash
+        run: |
+          KEYSTORE_PATH="$RUNNER_TEMP/wdb-release.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+          echo "WDB_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+
+      - name: Assemble signed release APK
+        if: steps.signing.outputs.available == 'true'
+        run: gradle --no-daemon assembleRelease
+
+      - name: Publish GitHub Release
+        if: steps.signing.outputs.available == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/outputs/apk/release/app-release.apk
+          generate_release_notes: true
+          fail_on_unmatched_files: true
