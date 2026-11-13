@@ -35,6 +35,8 @@ class WirelessAdbManager(
 
     fun startDiscovery() = discovery.start()
 
+    fun refreshDiscovery() = discovery.restart()
+
     suspend fun pair(host: String, port: Int, pairingCode: String) = withContext(Dispatchers.IO) {
         validateEndpoint(host, port)
         require(pairingCode.matches(Regex("[0-9]{6}"))) {
