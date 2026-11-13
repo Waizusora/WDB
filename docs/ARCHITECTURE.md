@@ -11,8 +11,13 @@
 ## Components
 
 - `MainActivity` owns the user interface and explicit navigation to Android system settings.
-- `AdbSessionService` owns the foreground session lifetime and a bounded partial wake lock.
-- A future ADB transport module must own pairing, authenticated transport, command execution, and stream lifecycle. It must not be conflated with the foreground service.
+- `FloatingPairService` owns the optional, user-dismissable overlay shortcut. It does not collect credentials; tapping it opens the in-app pairing form.
+- `AdbSessionService` owns the foreground session lifetime and a partial wake lock.
+- The ADB transport module must own pairing, authenticated transport, command execution, and stream lifecycle. It must not be conflated with the foreground service.
+
+## Pairing hand-off
+
+Android does not provide a stable public intent for the Wireless debugging pairing-code dialog across OEM builds. WDB opens Developer Options and lets the user navigate to Wireless debugging. When overlay access is granted, WDB can display a small floating shortcut that reopens the pairing form. The current form is a UI scaffold and does not yet perform the ADB pairing handshake.
 
 ## Required transport boundary
 
