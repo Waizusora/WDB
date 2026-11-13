@@ -31,7 +31,10 @@ import androidx.core.content.ContextCompat
 import com.waizusora.wdb.session.AdbSessionService
 import com.waizusora.wdb.session.FloatingPairService
 import com.waizusora.wdb.session.AdbSessionState
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import io.github.rhythmcache.adb.ShellChunk
 
 private data class AdbCommandOption(
     val id: String,
@@ -103,6 +106,8 @@ private fun WdbApp(showPairInitially: Boolean) {
     var pidOutput by remember { mutableStateOf("") }
     var logcatFilter by remember { mutableStateOf("") }
     var logcatOutput by remember { mutableStateOf("") }
+    var streamingLogcat by remember { mutableStateOf(false) }
+    var logcatJob by remember { mutableStateOf<Job?>(null) }
 
     LaunchedEffect(manager) { manager.startDiscovery() }
     val filteredLogcat = remember(logcatOutput, logcatFilter) {
@@ -180,6 +185,9 @@ private fun WdbApp(showPairInitially: Boolean) {
                                 onClick = {
                                     busy = true
                                     scope.launch {
+                                        logcatJob?.cancel()
+                                        logcatJob = null
+                                        streamingLogcat = false
                                         runCatching { manager.disconnect() }
                                         context.startService(
                                             Intent(context, AdbSessionService::class.java)
@@ -372,19 +380,56 @@ private fun WdbApp(showPairInitially: Boolean) {
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
-                        Button(
-                            enabled = connectedModel != null && !busy,
-                            onClick = {
-                                busy = true
-                                scope.launch {
-                                    logcatOutput = runCatching {
-                                        manager.execute("logcat -d -t 500 -v threadtime")
-                                    }.getOrElse { it.message ?: "Logcat capture failed." }.takeLast(60_000)
-                                    busy = false
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) { Text("Capture logcat") }
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Button(
+                                enabled = connectedModel != null && !busy && !streamingLogcat,
+                                onClick = {
+                                    busy = true
+                                    scope.launch {
+                                        logcatOutput = runCatching {
+                                            manager.execute("logcat -d -t 500 -v threadtime")
+                                        }.getOrElse { it.message ?: "Logcat capture failed." }.takeLast(60_000)
+                                        busy = false
+                                    }
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("Capture") }
+                            OutlinedButton(
+                                enabled = connectedModel != null && !busy,
+                                onClick = {
+                                    if (streamingLogcat) {
+                                        logcatJob?.cancel()
+                                        logcatJob = null
+                                        streamingLogcat = false
+                                    } else {
+                                        logcatOutput = ""
+                                        streamingLogcat = true
+                                        logcatJob = scope.launch {
+                                            try {
+                                                manager.logcatFlow().collect { chunk ->
+                                                    when (chunk) {
+                                                        is ShellChunk.Stdout ->
+                                                            logcatOutput = (logcatOutput + chunk.text).takeLast(60_000)
+                                                        is ShellChunk.Stderr ->
+                                                            logcatOutput = (logcatOutput + chunk.text).takeLast(60_000)
+                                                        is ShellChunk.Exit -> streamingLogcat = false
+                                                    }
+                                                }
+                                            } catch (cancelled: CancellationException) {
+                                                throw cancelled
+                                            } catch (error: Throwable) {
+                                                logcatOutput = (logcatOutput + "\n" +
+                                                    (error.message ?: "Logcat stream failed.")).takeLast(60_000)
+                                                streamingLogcat = false
+                                            } finally {
+                                                streamingLogcat = false
+                                            }
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) { Text(if (streamingLogcat) "Stop stream" else "Live stream") }
+                        }
                         if (logcatOutput.isNotBlank()) {
                             Text("${filteredLogcat.lineSequence().count()} visible lines",
                                 style = MaterialTheme.typography.labelSmall,
