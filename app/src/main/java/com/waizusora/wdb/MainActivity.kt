@@ -23,7 +23,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.waizusora.wdb.adb.WirelessAdbManager
 import com.waizusora.wdb.session.AdbSessionService
 import com.waizusora.wdb.session.FloatingPairService
 import kotlinx.coroutines.launch
@@ -62,7 +61,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun WdbApp(showPairInitially: Boolean) {
     val context = LocalContext.current
-    val manager = remember(context) { WirelessAdbManager(context.applicationContext) }
+    val manager = remember(context) { (context.applicationContext as WdbApplication).adbManager }
     val discovery by manager.discoveryState.collectAsState()
     val scope = rememberCoroutineScope()
 
@@ -84,10 +83,6 @@ private fun WdbApp(showPairInitially: Boolean) {
     var logcatOutput by remember { mutableStateOf("") }
 
     LaunchedEffect(manager) { manager.startDiscovery() }
-    DisposableEffect(manager) {
-        onDispose { manager.close() }
-    }
-
     val filteredLogcat = remember(logcatOutput, logcatFilter) {
         if (logcatFilter.isBlank()) logcatOutput
         else logcatOutput.lineSequence()
