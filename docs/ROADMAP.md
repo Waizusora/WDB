@@ -15,7 +15,7 @@
 - [x] PID lookup using validated package/process names and `pidof`
 - [x] Logcat snapshot capture with text filtering and bounded display output
 - [x] Apache License 2.0 and English technical documentation
-- [x] Android API 37 compatible Gradle toolchain and CI build workflow
+- [x] Stable Android API 36 Gradle toolchain and CI build workflow
 
 ## Remaining work
 
