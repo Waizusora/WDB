@@ -71,7 +71,7 @@ class AdbSessionService : Service() {
         }
         return builder
             .setContentTitle("WDB session active")
-            .setContentText("Session service is running; ADB transport is not connected.")
+            .setContentText("Authenticated ADB session is active.")
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .setOngoing(true)
             .build()
