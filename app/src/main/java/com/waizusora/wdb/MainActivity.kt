@@ -269,6 +269,10 @@ private fun WdbApp(showPairInitially: Boolean) {
                             }
                         }
                         Button(onClick = {
+                            discovery.pairDevices.singleOrNull()?.let { endpoint ->
+                                address = endpoint.host
+                                pairPort = endpoint.port.toString()
+                            }
                             showPair = true
                             if (Settings.canDrawOverlays(context)) {
                                 runCatching {
