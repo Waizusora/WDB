@@ -67,7 +67,7 @@ class FloatingPairService : Service() {
     private var windowParams: WindowManager.LayoutParams? = null
     private var keyboardLayoutListener: ViewTreeObserver.OnGlobalLayoutListener? = null
 
-    private var expanded by mutableStateOf(false)
+    private var isExpanded by mutableStateOf(false)
     private var host by mutableStateOf("127.0.0.1")
     private var port by mutableStateOf("")
     private var pairingCode by mutableStateOf("")
@@ -99,7 +99,7 @@ class FloatingPairService : Service() {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
             setContent {
                 PairOverlayContent(
-                    expanded = expanded,
+                    expanded = isExpanded,
                     host = host,
                     onHostChange = { host = it },
                     port = port,
@@ -146,7 +146,7 @@ class FloatingPairService : Service() {
     }
 
     private fun setExpanded(value: Boolean) {
-        expanded = value
+        isExpanded = value
         val view = overlay ?: return
         windowParams?.let { params ->
             params.width = dp(if (value) 336 else 150)
@@ -172,7 +172,7 @@ class FloatingPairService : Service() {
      */
     private fun installKeyboardPositioning(view: ComposeView) {
         val listener = ViewTreeObserver.OnGlobalLayoutListener {
-            if (!expanded || !view.isAttachedToWindow) return@OnGlobalLayoutListener
+            if (!isExpanded || !view.isAttachedToWindow) return@OnGlobalLayoutListener
             val visibleFrame = Rect()
             view.getWindowVisibleDisplayFrame(visibleFrame)
             val screenHeight = resources.displayMetrics.heightPixels
