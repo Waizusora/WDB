@@ -3,6 +3,14 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val releaseSigningValues = listOf(
+    System.getenv("WDB_KEYSTORE_PATH"),
+    System.getenv("WDB_KEYSTORE_PASSWORD"),
+    System.getenv("WDB_KEY_ALIAS"),
+    System.getenv("WDB_KEY_PASSWORD")
+)
+val releaseSigningAvailable = releaseSigningValues.all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.waizusora.wdb"
     compileSdk = 36
@@ -16,6 +24,26 @@ android {
     }
 
     buildFeatures { compose = true }
+
+    signingConfigs {
+        if (releaseSigningAvailable) {
+            create("release") {
+                storeFile = file(requireNotNull(System.getenv("WDB_KEYSTORE_PATH")))
+                storePassword = requireNotNull(System.getenv("WDB_KEYSTORE_PASSWORD"))
+                keyAlias = requireNotNull(System.getenv("WDB_KEY_ALIAS"))
+                keyPassword = requireNotNull(System.getenv("WDB_KEY_PASSWORD"))
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            isMinifyEnabled = false
+            if (releaseSigningAvailable) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
+    }
 
     packaging {
         resources {
