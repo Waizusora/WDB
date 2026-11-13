@@ -37,6 +37,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import io.github.rhythmcache.adb.ShellChunk
 
@@ -546,7 +547,7 @@ private fun WdbApp(showPairInitially: Boolean) {
                                                 logcatOutput = (logcatOutput + "\\n" + (error.message ?: "Logcat stream failed.")).takeLast(60_000)
                                                 statusMessage = "Logcat save/stream failed: ${error.message}"
                                             } finally {
-                                                withContext(Dispatchers.IO) { runCatching { output?.close() } }
+                                                withContext(NonCancellable + Dispatchers.IO) { runCatching { output?.close() } }
                                                 streamingLogcat = false
                                             }
                                         }
