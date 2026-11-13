@@ -62,7 +62,7 @@ Pushing a tag matching `v*` starts the release workflow. Configure all of these 
 - `ANDROID_KEY_ALIAS`: Signing key alias.
 - `ANDROID_KEY_PASSWORD`: Signing key password.
 
-The workflow checks all four secrets before restoring the keystore. If any value is missing, the signed release build and GitHub Release publication steps are skipped. The debug build workflow remains independent.
+The workflow checks all four secrets before restoring the keystore. If any value is missing, the signed release build and GitHub Release publication steps are skipped. The debug build workflow remains independent. Generate the secret value for the keystore with `base64 -w 0 release.jks` on GNU/Linux (or `base64 -i release.jks | tr -d '\\n'` on macOS), then store the output as the `ANDROID_KEYSTORE_BASE64` Actions secret. Do not add the keystore itself to the repository.
 
 Example tag:
 
