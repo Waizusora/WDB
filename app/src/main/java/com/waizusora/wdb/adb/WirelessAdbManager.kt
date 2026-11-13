@@ -3,9 +3,12 @@ package com.waizusora.wdb.adb
 import android.content.Context
 import io.github.rhythmcache.adb.AdbClient
 import io.github.rhythmcache.adb.AdbKeyProvider
+import io.github.rhythmcache.adb.ShellChunk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import java.io.Closeable
 import java.io.IOException
@@ -88,6 +91,11 @@ class WirelessAdbManager(
                 append(']')
             }
         }
+    }
+
+    fun logcatFlow(): Flow<ShellChunk> {
+        val client = activeClient ?: throw IllegalStateException("No authenticated ADB transport.")
+        return client.shellFlow("logcat -v threadtime").flowOn(Dispatchers.IO)
     }
 
     suspend fun disconnect() = withContext(Dispatchers.IO) {
