@@ -23,10 +23,10 @@ WDB uses a minimal Material 3 interface and connects directly to `adbd` through 
 - Foreground ADB session service with a full wake lock while the session is active.
 - Optional floating pairing shortcut, gated by user-granted overlay access.
 - Checkable shell-command catalog, custom shell commands, and validated `pidof` package lookup.
-- Live Logcat streaming over Shell V2, bounded in-memory output, text filtering, snapshot capture, and Clear Logcat (`logcat -c`).
+- Live Logcat streaming over Shell V2, bounded in-memory output, text filtering, snapshot capture, automatic timestamped `.txt` export to the Settings transfer directory, and Clear Logcat (`logcat -c`).
 - In-app Open Source Licenses information.
 - Native ADB package installation/uninstallation, including multi-select split APKs and `.apks`/`.xapk`/`.apkm` archives.
-- ADB Sync push/pull, TCP forward/reverse rules, and a persistent SAF transfer directory configurable in Settings.
+- ADB Sync push/pull with progress, throughput/ETA and cancellation controls, in-session TCP forward/reverse rule management, and a persistent SAF transfer directory configurable in Settings.
 
 ## Build requirements
 
@@ -89,7 +89,9 @@ Android does not expose a stable public intent that opens the pairing-code dialo
 
 ## Logcat
 
-- **Live stream** runs `logcat -v threadtime` over the authenticated Shell V2 stream.
+- **Live stream** runs `logcat -b all -v threadtime` over the authenticated Shell V2 stream and writes the complete stream to a timestamped `.txt` file in the Settings transfer directory.
+- **Capture & save** writes a bounded snapshot to a separate timestamped `.txt` file in the same directory.
+- Select a writable transfer directory in Settings before using either save action.
 - **Stop stream** cancels the streaming coroutine.
 - **Capture** retrieves a bounded snapshot using `logcat -b all -d -t 500 -v threadtime`.
 - **Clear Logcat** runs `logcat -c` on the connected device. The UI reports success or that the ADB device is not connected.
