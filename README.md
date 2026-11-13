@@ -25,7 +25,8 @@ WDB uses a minimal Material 3 interface and connects directly to `adbd` through 
 - Checkable shell-command catalog, custom shell commands, and validated `pidof` package lookup.
 - Live Logcat streaming over Shell V2, bounded in-memory output, text filtering, snapshot capture, and Clear Logcat (`logcat -c`).
 - In-app Open Source Licenses information.
-- Native ADB package installation/uninstallation, ADB Sync push/pull, and TCP forward/reverse rules.
+- Native ADB package installation/uninstallation, including multi-select split APKs and `.apks`/`.xapk`/`.apkm` archives.
+- ADB Sync push/pull, TCP forward/reverse rules, and a persistent SAF transfer directory configurable in Settings.
 
 ## Build requirements
 
