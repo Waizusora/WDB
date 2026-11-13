@@ -1,12 +1,38 @@
-*.iml
+# Gradle and Android Studio
 .gradle/
-.idea/
-local.properties
-.DS_Store
-/build/
 **/build/
+.idea/
+*.iml
+local.properties
 .externalNativeBuild/
 .cxx/
 captures/
+.DS_Store
+
+# Signing credentials and private keys (never commit)
 *.jks
+*.JKS
 *.keystore
+*.keystore.*
+*.p12
+*.pfx
+*.key
+*.pem
+*.mobileprovision
+keystore.properties
+signing.properties
+**/release-keystore.*
+**/upload-keystore.*
+
+# Local environment and secret files
+.env
+.env.*
+!.env.example
+secrets.properties
+credentials.json
+
+# Generated outputs
+*.apk
+*.aab
+*.ap_
+*.dex
