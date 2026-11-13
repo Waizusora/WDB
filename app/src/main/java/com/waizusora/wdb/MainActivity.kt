@@ -77,17 +77,14 @@ private val commandCatalog = listOf(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { WdbApp(showPairInitially = intent.getBooleanExtra(EXTRA_SHOW_PAIR, false)) }
+        setContent { WdbApp() }
     }
 
-    companion object {
-        const val EXTRA_SHOW_PAIR = "com.waizusora.wdb.extra.SHOW_PAIR"
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WdbApp(showPairInitially: Boolean) {
+private fun WdbApp() {
     val context = LocalContext.current
     val manager = remember(context) { (context.applicationContext as WdbApplication).adbManager }
     val discovery by manager.discoveryState.collectAsState()
@@ -131,10 +128,6 @@ private fun WdbApp(showPairInitially: Boolean) {
     }
     var showSettings by remember { mutableStateOf(false) }
     var showOpenSourceLicenses by remember { mutableStateOf(false) }
-    var showPair by remember { mutableStateOf(showPairInitially) }
-    var address by remember { mutableStateOf("") }
-    var pairPort by remember { mutableStateOf("") }
-    var pairingCode by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var commandOutput by remember { mutableStateOf("") }
     var customCommand by remember { mutableStateOf("") }
@@ -158,13 +151,6 @@ private fun WdbApp(showPairInitially: Boolean) {
     }
 
     LaunchedEffect(manager) { manager.startDiscovery() }
-    LaunchedEffect(discovery.pairDevices, showPair) {
-        val endpoint = discovery.pairDevices.singleOrNull()
-        if (showPair && endpoint != null && address.isBlank() && pairPort.isBlank()) {
-            address = endpoint.host
-            pairPort = endpoint.port.toString()
-        }
-    }
     val filteredLogcat = remember(logcatOutput, logcatFilter) {
         if (logcatFilter.isBlank()) logcatOutput
         else logcatOutput.lineSequence()
@@ -283,10 +269,21 @@ private fun WdbApp(showPairInitially: Boolean) {
                                     supportingContent = { Text("${endpoint.host}:${endpoint.port} · pairing") },
                                     trailingContent = {
                                         TextButton(onClick = {
-                                            address = endpoint.host
-                                            pairPort = endpoint.port.toString()
-                                            showPair = true
-                                        }) { Text("Use") }
+                                            if (Settings.canDrawOverlays(context)) {
+                                                val floatingIntent = Intent(context, FloatingPairService::class.java)
+                                                    .putExtra("com.waizusora.wdb.extra.PAIR_HOST", endpoint.host)
+                                                    .putExtra("com.waizusora.wdb.extra.PAIR_PORT", endpoint.port)
+                                                runCatching {
+                                                    ContextCompat.startForegroundService(context, floatingIntent)
+                                                    statusMessage = "Floating Pair opened for ${endpoint.host}:${endpoint.port}."
+                                                }.onFailure {
+                                                    statusMessage = "Unable to open floating Pair: ${it.message}"
+                                                }
+                                            } else {
+                                                statusMessage = "Grant overlay permission in Settings to use floating Pair."
+                                                showSettings = true
+                                            }
+                                        }) { Text("Pair") }
                                     }
                                 )
                             }
@@ -326,10 +323,6 @@ private fun WdbApp(showPairInitially: Boolean) {
                             }
                         }
                         Button(onClick = {
-                            discovery.pairDevices.singleOrNull()?.let { endpoint ->
-                                address = endpoint.host
-                                pairPort = endpoint.port.toString()
-                            }
                             if (Settings.canDrawOverlays(context)) {
                                 val floatingIntent = Intent(context, FloatingPairService::class.java)
                                 discovery.pairDevices.singleOrNull()?.let { endpoint ->
@@ -343,8 +336,8 @@ private fun WdbApp(showPairInitially: Boolean) {
                                     statusMessage = "Unable to start floating Pair: ${it.message}"
                                 }
                             } else {
-                                showPair = true
-                                statusMessage = "Grant overlay permission to use floating Pair."
+                                showSettings = true
+                                statusMessage = "Grant overlay permission in Settings to use floating Pair."
                             }
                             runCatching {
                                 context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
@@ -590,52 +583,6 @@ private fun WdbApp(showPairInitially: Boolean) {
                     }
                 }
             }
-        }
-
-        if (showPair) {
-            AlertDialog(
-                onDismissRequest = { showPair = false },
-                title = { Text("Pair with device") },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedTextField(address, { address = it }, label = { Text("IP address") },
-                            singleLine = true, modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(pairPort, { pairPort = it.filter(Char::isDigit).take(5) },
-                            label = { Text("Pairing port") }, singleLine = true,
-                            modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(pairingCode, { pairingCode = it.filter(Char::isDigit).take(6) },
-                            label = { Text("6-digit pairing code") }, singleLine = true,
-                            modifier = Modifier.fillMaxWidth())
-                        Text("Keep the system pairing dialog open while pairing completes.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                },
-                confirmButton = {
-                    TextButton(
-                        enabled = !busy && address.isNotBlank() && pairPort.toIntOrNull()?.let { it in 1..65535 } == true &&
-                            pairingCode.matches(Regex("[0-9]{6}")),
-                        onClick = {
-                            busy = true
-                            statusMessage = "Performing secure Wireless debugging pairing…"
-                            val host = address
-                            val port = pairPort.toInt()
-                            val code = pairingCode
-                            scope.launch {
-                                runCatching { manager.pair(host, port, code) }
-                                    .onSuccess { statusMessage = "Pairing handshake succeeded. Waiting for connect endpoint." }
-                                    .onFailure { statusMessage = it.message ?: "Pairing failed." }
-                                pairingCode = ""
-                                busy = false
-                                showPair = false
-                            }
-                        }
-                    ) { Text("Pair") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showPair = false; pairingCode = "" }) { Text("Cancel") }
-                }
-            )
         }
 
         if (showSettings) {
