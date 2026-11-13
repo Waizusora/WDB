@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.waizusora.wdb"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.waizusora.wdb"
