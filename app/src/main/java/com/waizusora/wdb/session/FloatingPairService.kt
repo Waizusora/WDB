@@ -65,8 +65,8 @@ class FloatingPairService : Service() {
     private fun buildOverlay() {
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(10), dp(14), dp(12))
-            background = roundedBackground(Color.rgb(24, 29, 38), 22f, Color.rgb(76, 91, 116))
+            setPadding(dp(16), dp(14), dp(16), dp(16))
+            background = roundedBackground(Color.rgb(28, 27, 31), 28f, Color.rgb(73, 69, 79))
             elevation = dp(10).toFloat()
         }
 
@@ -79,9 +79,9 @@ class FloatingPairService : Service() {
             textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
-            setTextColor(Color.rgb(18, 25, 38))
-            setPadding(dp(24), dp(10), dp(24), dp(10))
-            background = roundedBackground(Color.rgb(183, 200, 255), 14f)
+            setTextColor(Color.rgb(56, 30, 114))
+            setPadding(dp(24), dp(12), dp(24), dp(12))
+            background = roundedBackground(Color.rgb(208, 188, 255), 20f)
             setOnClickListener { setExpanded(!expanded) }
         }
         val spacer = android.view.View(this)
@@ -89,7 +89,7 @@ class FloatingPairService : Service() {
             text = "×"
             textSize = 24f
             gravity = Gravity.CENTER
-            setTextColor(Color.rgb(190, 199, 214))
+            setTextColor(Color.rgb(230, 225, 229))
             setPadding(dp(12), 0, dp(2), 0)
             setOnClickListener { stopSelf() }
         }
@@ -103,8 +103,9 @@ class FloatingPairService : Service() {
             visibility = android.view.View.GONE
         }
         form.addView(label("Pair device"))
+        form.addView(label("Use the pairing details shown by Android."))
         form.addView(label("IP address"))
-        addressInput = input("192.168.1.10", android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI)
+        addressInput = input("127.0.0.1", android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI)
         form.addView(addressInput, fieldParams())
         form.addView(label("Port"))
         portInput = input("Pairing port", android.text.InputType.TYPE_CLASS_NUMBER)
@@ -116,9 +117,9 @@ class FloatingPairService : Service() {
         form.addView(codeInput, fieldParams())
 
         statusText = TextView(this).apply {
-            text = "Enter the pairing details shown on your device."
+            text = "This phone is detected automatically. Remote devices keep their Wi-Fi address."
             textSize = 11f
-            setTextColor(Color.rgb(174, 185, 203))
+            setTextColor(Color.rgb(202, 196, 208))
             setPadding(0, dp(8), 0, dp(4))
         }
         form.addView(statusText)
@@ -131,8 +132,8 @@ class FloatingPairService : Service() {
             text = "Back"
             textSize = 13f
             gravity = Gravity.CENTER
-            setTextColor(Color.rgb(210, 218, 231))
-            setPadding(dp(14), dp(10), dp(14), dp(10))
+            setTextColor(Color.rgb(230, 225, 229))
+            setPadding(dp(16), dp(12), dp(16), dp(12))
             setOnClickListener { setExpanded(false) }
         }
         val submit = TextView(this).apply {
@@ -141,8 +142,8 @@ class FloatingPairService : Service() {
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             setTextColor(Color.rgb(18, 25, 38))
-            setPadding(dp(18), dp(10), dp(18), dp(10))
-            background = roundedBackground(Color.rgb(141, 216, 194), 12f)
+            setPadding(dp(18), dp(12), dp(18), dp(12))
+            background = roundedBackground(Color.rgb(208, 188, 255), 16f)
             setOnClickListener { performPairing(this) }
         }
         actions.addView(back)
@@ -179,7 +180,7 @@ class FloatingPairService : Service() {
         form.visibility = if (value) android.view.View.VISIBLE else android.view.View.GONE
         pairButton.visibility = if (value) android.view.View.GONE else android.view.View.VISIBLE
         windowParams?.let { params ->
-            params.width = dp(if (value) 300 else 150)
+            params.width = dp(if (value) 320 else 150)
             params.flags = if (value) {
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
             } else {
@@ -229,7 +230,7 @@ class FloatingPairService : Service() {
         text = value
         textSize = 11f
         typeface = Typeface.DEFAULT_BOLD
-        setTextColor(Color.rgb(190, 201, 219))
+        setTextColor(Color.rgb(202, 196, 208))
         setPadding(0, dp(9), 0, dp(3))
     }
 
@@ -238,10 +239,10 @@ class FloatingPairService : Service() {
         textSize = 13f
         inputType = type
         setSingleLine(true)
-        setTextColor(Color.WHITE)
-        setHintTextColor(Color.rgb(125, 138, 158))
+        setTextColor(Color.rgb(230, 225, 229))
+        setHintTextColor(Color.rgb(147, 143, 153))
         setPadding(dp(10), 0, dp(10), 0)
-        background = roundedBackground(Color.rgb(39, 47, 61), 10f)
+        background = roundedBackground(Color.rgb(43, 41, 48), 14f, Color.rgb(73, 69, 79))
     }
 
     private fun fieldParams() = LinearLayout.LayoutParams(
