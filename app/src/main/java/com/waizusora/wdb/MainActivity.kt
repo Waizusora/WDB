@@ -72,6 +72,7 @@ private fun WdbApp(showPairInitially: Boolean) {
     val connectedModel by manager.connectedModel.collectAsState()
     val sessionRunning by AdbSessionState.running.collectAsState()
     val scope = rememberCoroutineScope()
+    var statusMessage by remember { mutableStateOf("Scanning for Wireless debugging services…") }
     val startSession: () -> Unit = {
         if (!manager.isConnected()) {
             statusMessage = "ADB transport is no longer connected. Reconnect before starting the session."
@@ -97,7 +98,6 @@ private fun WdbApp(showPairInitially: Boolean) {
     var connectPort by remember { mutableStateOf("") }
     var pairingCode by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
-    var statusMessage by remember { mutableStateOf("Scanning for Wireless debugging services…") }
     var commandOutput by remember { mutableStateOf("") }
     var selectedCommands by remember { mutableStateOf(setOf("model", "android")) }
     var packageName by remember { mutableStateOf("") }
