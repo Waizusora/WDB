@@ -11,31 +11,31 @@
 
 ## Components
 
-- `WdbApplication` configures the encrypted ADB identity store and owns the process-wide `WirelessAdbManager`.
+- `WdbApplication` creates the encrypted ADB key provider and owns the process-wide `WirelessAdbManager`.
 - `MainActivity` renders the user interface and explicitly navigates to Android system settings.
 - `FloatingPairService` owns the optional, user-dismissable overlay shortcut. It does not collect credentials; tapping it opens the in-app pairing form.
 - `AdbSessionService` owns the foreground session lifetime and a partial wake lock. Its process-wide `AdbSessionState` exposes service status to the UI across Activity recreation.
-- Kadb implements the ADB pairing protocol, TLS transport negotiation, ADB stream multiplexing, and shell execution.
-- Kadb mDNS discovery reports pairing and connection endpoints separately.
+- `WirelessAdbDiscovery` uses Android `NsdManager` to discover the ADB pairing and TLS connection service types.
+- adb-kt implements ADB protocol framing, SPAKE2 pairing, TLS transport, Shell V2, and coroutine-based command streams.
 
 ## Pairing and connection
 
-The application uses Kadb 2.1.5, an Apache-2.0 Kotlin ADB client.
+The application uses adb-kt 1.0.13 and spake2-kt v1.0.2. Both are Apache-2.0 licensed.
 
-1. `Kadb.pair(host, port, pairingCode)` performs the Wireless Debugging SPAKE2 pairing exchange over TLS.
-2. `KadbMdnsAndroid` discovers `_adb-tls-pairing._tcp` and `_adb-tls-connect._tcp` service endpoints using Android `NsdManager`.
-3. `Kadb.create(host, port)` establishes the ADB transport. The library negotiates the TLS upgrade when the peer requests it.
-4. WDB executes a protocol-level shell handshake before retaining the client or showing Connected.
+1. `AdbClient.pairTls(host, port, pairingCode, keyProvider)` performs the Wireless Debugging SPAKE2 pairing exchange over TLS 1.3.
+2. `WirelessAdbDiscovery` resolves `_adb-tls-pairing._tcp.` and `_adb-tls-connect._tcp.` using Android `NsdManager`.
+3. `AdbClient.connectTls(host, port, keyProvider)` establishes the authenticated ADB TLS transport.
+4. WDB executes a Shell V2 handshake before retaining the client or showing Connected.
 
 Pairing success and transport connection are distinct states. A pairing handshake does not imply that a usable shell transport exists.
 
 ## Host identity
 
-`EncryptedAdbPrivateKeyStore` implements Kadb's `KadbPrivateKeyStore`. The private key is encrypted with AES-GCM; the AES key is generated in Android Keystore and is not exportable. Only ciphertext is stored in app-private files. Pairing codes are not persisted.
+`EncryptedAdbKeyProvider` implements adb-kt's `AdbKeyProvider`. It generates a 2048-bit RSA identity once and stores its PKCS#8 private-key bytes encrypted with AES-GCM. The AES key is generated in Android Keystore and is non-exportable. Only ciphertext is stored in app-private files. Pairing codes are not persisted.
 
 ## Command execution
 
-The current command catalog executes a bounded set of shell commands through the authenticated ADB transport. PID lookup validates package/process names before invoking `pidof`. Logcat capture uses `logcat -d -t 500 -v threadtime`, retains a bounded output snapshot, and applies a local text filter. Live logcat streaming is not yet implemented.
+The current command catalog executes a bounded set of shell commands through the authenticated ADB transport. PID lookup validates package/process names before invoking `pidof`. Logcat capture uses `logcat -d -t 500 -v threadtime`, retains a bounded output snapshot, and applies a local text filter. adb-kt also exposes a Shell V2 Flow API; WDB's live Logcat UI remains to be implemented.
 
 ## Background execution
 
@@ -45,7 +45,8 @@ The foreground service is started only after an explicit user action and a verif
 
 - Never write pairing codes, private keys, or authentication tokens to logs.
 - Validate IP addresses and port ranges before initiating network operations.
-- Use the ADB pairing protocol and TLS transport supplied by Kadb; do not downgrade to unauthenticated plaintext.
+- Use SPAKE2 pairing and authenticated TLS transport; do not downgrade to unauthenticated plaintext.
 - Keep command execution scoped to the selected device.
 - Treat shell commands as privileged user input and display the exact command before execution where practical.
 - Keep host identity material inside app-private storage and encrypt it with Android Keystore.
+- Re-evaluate the ADB protocol dependency before release because third-party code has not been independently audited by WDB maintainers.
