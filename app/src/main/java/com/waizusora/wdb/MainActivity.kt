@@ -330,11 +330,21 @@ private fun WdbApp(showPairInitially: Boolean) {
                                 address = endpoint.host
                                 pairPort = endpoint.port.toString()
                             }
-                            showPair = true
                             if (Settings.canDrawOverlays(context)) {
-                                runCatching {
-                                    ContextCompat.startForegroundService(context, Intent(context, FloatingPairService::class.java))
+                                val floatingIntent = Intent(context, FloatingPairService::class.java)
+                                discovery.pairDevices.singleOrNull()?.let { endpoint ->
+                                    floatingIntent.putExtra("com.waizusora.wdb.extra.PAIR_HOST", endpoint.host)
+                                    floatingIntent.putExtra("com.waizusora.wdb.extra.PAIR_PORT", endpoint.port)
                                 }
+                                runCatching {
+                                    ContextCompat.startForegroundService(context, floatingIntent)
+                                    statusMessage = "Floating Pair shortcut is ready. Tap Pair to enter the pairing details."
+                                }.onFailure {
+                                    statusMessage = "Unable to start floating Pair: ${it.message}"
+                                }
+                            } else {
+                                showPair = true
+                                statusMessage = "Grant overlay permission to use floating Pair."
                             }
                             runCatching {
                                 context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
