@@ -8,6 +8,8 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Owns the user-visible lifetime of an explicitly started WDB session.
@@ -38,6 +40,7 @@ class AdbSessionService : Service() {
 
     private fun startSession() {
         startForeground(NOTIFICATION_ID, buildNotification())
+        AdbSessionState.setRunning(true)
         if (wakeLock?.isHeld != true) {
             val manager = getSystemService(POWER_SERVICE) as PowerManager
             wakeLock = manager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:WdbSession")
@@ -46,6 +49,7 @@ class AdbSessionService : Service() {
     }
 
     private fun stopSession() {
+        AdbSessionState.setRunning(false)
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -80,6 +84,7 @@ class AdbSessionService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        AdbSessionState.setRunning(false)
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         super.onDestroy()
@@ -90,5 +95,17 @@ class AdbSessionService : Service() {
         const val ACTION_STOP = "com.waizusora.wdb.action.STOP"
         private const val CHANNEL_ID = "wdb_session"
         private const val NOTIFICATION_ID = 4101
+    }
+}
+
+/**
+ * Process-wide observable state for the foreground ADB session.
+ */
+object AdbSessionState {
+    private val mutableRunning = MutableStateFlow(false)
+    val running = mutableRunning.asStateFlow()
+
+    internal fun setRunning(value: Boolean) {
+        mutableRunning.value = value
     }
 }
