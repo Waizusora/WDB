@@ -19,8 +19,8 @@ android {
         applicationId = "com.waizusora.wdb"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.5.0"
+        versionCode = 4
+        versionName = "0.6.0"
     }
 
     buildFeatures { compose = true }
@@ -73,6 +73,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.documentfile:documentfile:1.0.1")
 
     // Pure Kotlin ADB protocol, SPAKE2 pairing, TLS 1.3, Shell V2, and streaming APIs.
     implementation("com.github.rhythmcache:adb-kt:394dea235b4bfb2ebbfba5a821bbe4f6cd59e460")
