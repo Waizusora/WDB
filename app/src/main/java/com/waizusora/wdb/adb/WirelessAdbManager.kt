@@ -125,6 +125,7 @@ class WirelessAdbManager(
                 val sources = uris.mapIndexed { index, uri ->
                     val descriptor = appContext.contentResolver.openFileDescriptor(uri, "r") ?: throw IOException("Unable to open selected APK file.")
                     descriptors += descriptor
+                    if (descriptor.statSize <= 0L) throw IOException("Selected APK has no readable file size.")
                     val name = displayName(uri) ?: "split_$index.apk"
                     if (!name.endsWith(".apk", ignoreCase = true)) throw IOException("Select APK files, or one .apks/.xapk/.apkm archive.")
                     name to RandomAccessSource.of(descriptor.fileDescriptor, descriptor.statSize)
