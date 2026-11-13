@@ -22,7 +22,8 @@
 
 ## Remaining work
 
-- [ ] Add pairing, TLS reconnect, shell streaming, and mDNS unit/instrumentation tests
+- [x] Add initial JVM tests for numeric ADB endpoint validation
+- [ ] Add pairing, TLS reconnect, shell streaming, and mDNS instrumentation tests
 - [ ] Add UI tests for pairing, permission denial, reconnect, Logcat cancellation, and Stop behavior
 - [ ] Verify API 26–35 behavior on physical devices and OEM variants
 - [ ] Add ADB host-side package install/uninstall workflows
