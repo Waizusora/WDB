@@ -110,6 +110,13 @@ private fun WdbApp(showPairInitially: Boolean) {
     var logcatJob by remember { mutableStateOf<Job?>(null) }
 
     LaunchedEffect(manager) { manager.startDiscovery() }
+    LaunchedEffect(discovery.pairDevices, showPair) {
+        val endpoint = discovery.pairDevices.singleOrNull()
+        if (showPair && endpoint != null && address.isBlank() && pairPort.isBlank()) {
+            address = endpoint.host
+            pairPort = endpoint.port.toString()
+        }
+    }
     val filteredLogcat = remember(logcatOutput, logcatFilter) {
         if (logcatFilter.isBlank()) logcatOutput
         else logcatOutput.lineSequence()
