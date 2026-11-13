@@ -122,6 +122,11 @@ class WirelessAdbDiscovery(context: Context) : Closeable {
         )
     }
 
+    fun restart() {
+        close()
+        start()
+    }
+
     override fun close() {
         synchronized(lock) {
             if (!started) return
