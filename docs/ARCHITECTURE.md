@@ -39,6 +39,10 @@ The checkable command catalog exposes common device diagnostics. The custom comm
 
 Live Logcat uses `logcat -b all -v threadtime` through adb-kt's Shell V2 Flow API. The UI collects stdout and stderr chunks, bounds retained output, supports text filtering, and cancels the collection job when the user stops streaming or ends the ADB session. Snapshot capture uses `logcat -b all -d -t 500 -v threadtime`. Clear Logcat executes `logcat -c` only after checking the active authenticated transport and reports the command outcome in the UI.
 
+## Device management, file sync, and port mapping
+
+`WirelessAdbManager` uses adb-kt native ADB services for streaming APK installation, package removal, ADB Sync push/pull, host-side TCP forwarding, and device-side reverse forwarding. APK and file selection use Android's Storage Access Framework; no broad storage permission is required. Uninstall requires an explicit confirmation. File paths must be absolute device paths, package names are validated, and TCP ports are constrained to 1–65535.
+
 ## Background execution and power
 
 The foreground service starts only after an explicit user action and a verified transport. It acquires `PowerManager.FULL_WAKE_LOCK` while active and releases it on Stop or service destruction. This intentionally keeps the display on and increases power consumption. The floating pairing shortcut uses its own foreground service while visible.

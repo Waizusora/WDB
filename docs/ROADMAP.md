@@ -26,9 +26,9 @@
 - [ ] Add pairing, TLS reconnect, shell streaming, and mDNS instrumentation tests
 - [ ] Add UI tests for pairing, permission denial, reconnect, Logcat cancellation, and Stop behavior
 - [ ] Verify API 26–35 behavior on physical devices and OEM variants
-- [ ] Add ADB host-side package install/uninstall workflows
-- [ ] Add ADB sync-based file push and pull workflows
-- [ ] Add ADB port forwarding and reverse forwarding
+- [x] Add ADB host-side package install/uninstall workflows
+- [x] Add ADB sync-based file push and pull workflows
+- [x] Add ADB port forwarding and reverse forwarding
 - [ ] Add command-specific argument forms and explicit confirmation for destructive operations
 - [ ] Add a reproducible Gradle wrapper and release build/signing validation
 - [ ] Add dependency license and vulnerability checks to CI

@@ -228,6 +228,8 @@ private fun WdbApp(showPairInitially: Boolean) {
                     }
                 }
 
+                AdbToolsPanel(manager = manager, connected = connectedModel != null)
+
                 ElevatedCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {

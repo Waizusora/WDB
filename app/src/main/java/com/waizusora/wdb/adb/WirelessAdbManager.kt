@@ -1,6 +1,9 @@
 package com.waizusora.wdb.adb
 
 import android.content.Context
+import android.net.Uri
+import io.github.rhythmcache.adb.io.RandomAccessSource
+import kotlinx.coroutines.flow.collect
 import io.github.rhythmcache.adb.AdbClient
 import io.github.rhythmcache.adb.AdbKeyProvider
 import io.github.rhythmcache.adb.ShellChunk
@@ -24,7 +27,8 @@ class WirelessAdbManager(
     context: Context,
     private val keyProvider: AdbKeyProvider
 ) : Closeable {
-    private val discovery = WirelessAdbDiscovery(context.applicationContext)
+    private val appContext = context.applicationContext
+    private val discovery = WirelessAdbDiscovery(appContext)
     val discoveryState = discovery.state
 
     @Volatile
@@ -93,6 +97,94 @@ class WirelessAdbManager(
                 append(']')
             }
         }
+    }
+
+
+    suspend fun installApk(uri: Uri): String = withContext(Dispatchers.IO) {
+        val client = requireClient()
+        val descriptor = appContext.contentResolver.openFileDescriptor(uri, "r")
+            ?: throw IOException("Unable to open the selected APK.")
+        try {
+            val source = RandomAccessSource.of(descriptor.fileDescriptor, descriptor.statSize)
+            var latest = "Preparing APK installation…"
+            client.install.install(source, flags = listOf("-r")).collect { progress ->
+                latest = "${progress.statusText} (${progress.percentage.toInt()}%)"
+            }
+            latest
+        } finally {
+            descriptor.close()
+        }
+    }
+
+    suspend fun uninstallPackage(packageName: String): String = withContext(Dispatchers.IO) {
+        require(packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))) {
+            "Enter a valid Android package name."
+        }
+        val result = requireClient().shell("pm uninstall $packageName")
+        if (!result.isSuccess || !result.stdoutText.trim().startsWith("Success")) {
+            throw IOException(result.stderrText.ifBlank { result.stdoutText }.ifBlank { "Package uninstall failed." })
+        }
+        result.stdoutText.trim()
+    }
+
+    suspend fun pushFile(uri: Uri, remotePath: String): String = withContext(Dispatchers.IO) {
+        require(remotePath.startsWith("/") && !remotePath.contains('\\u0000')) {
+            "Remote destination must be an absolute device path."
+        }
+        val input = appContext.contentResolver.openInputStream(uri)
+            ?: throw IOException("Unable to open the selected source file.")
+        input.use { stream ->
+            var transferred = 0L
+            requireClient().sync.push(stream, remotePath, onProgress = { transferred = it })
+            "Pushed $transferred bytes to $remotePath"
+        }
+    }
+
+    suspend fun pullFile(remotePath: String, destination: Uri): String = withContext(Dispatchers.IO) {
+        require(remotePath.startsWith("/") && !remotePath.contains('\\u0000')) {
+            "Remote source must be an absolute device path."
+        }
+        val output = appContext.contentResolver.openOutputStream(destination, "wt")
+            ?: throw IOException("Unable to open the selected destination.")
+        output.use { stream ->
+            var transferred = 0L
+            requireClient().sync.pull(remotePath, stream, onProgress = { transferred = it })
+            "Pulled $transferred bytes from $remotePath"
+        }
+    }
+
+    suspend fun addForward(localPort: Int, devicePort: Int): String = withContext(Dispatchers.IO) {
+        validatePort(localPort)
+        validatePort(devicePort)
+        requireClient().forward.add("tcp:$localPort", "tcp:$devicePort")
+        "Forward active: 127.0.0.1:$localPort → device:$devicePort"
+    }
+
+    suspend fun removeForward(localPort: Int): String = withContext(Dispatchers.IO) {
+        validatePort(localPort)
+        requireClient().forward.remove("tcp:$localPort")
+        "Forward removed: 127.0.0.1:$localPort"
+    }
+
+    suspend fun addReverse(devicePort: Int, hostPort: Int): String = withContext(Dispatchers.IO) {
+        validatePort(devicePort)
+        validatePort(hostPort)
+        requireClient().reverse.add("tcp:$devicePort", "tcp:$hostPort")
+        "Reverse active: device:$devicePort → 127.0.0.1:$hostPort"
+    }
+
+    suspend fun removeReverse(devicePort: Int): String = withContext(Dispatchers.IO) {
+        validatePort(devicePort)
+        requireClient().reverse.remove("tcp:$devicePort")
+        "Reverse removed: device:$devicePort"
+    }
+
+    private fun requireClient(): AdbClient =
+        activeClient?.takeIf { !it.isClosed }
+            ?: throw IllegalStateException("No authenticated ADB transport.")
+
+    private fun validatePort(port: Int) {
+        require(port in 1..65535) { "TCP port must be between 1 and 65535." }
     }
 
     fun logcatFlow(): Flow<ShellChunk> {
