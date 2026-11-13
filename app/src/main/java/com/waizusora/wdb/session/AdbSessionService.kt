@@ -78,7 +78,7 @@ class AdbSessionService : Service() {
         }
         return builder
             .setContentTitle("WDB session active")
-            .setContentText("Authenticated ADB session is active.")
+            .setContentText("WDB foreground session is running.")
             .setSmallIcon(android.R.drawable.stat_sys_data_bluetooth)
             .setOngoing(true)
             .build()
