@@ -22,20 +22,25 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.waizusora.wdb.session.AdbSessionService
+import com.waizusora.wdb.session.FloatingPairService
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { WdbApp() }
+        setContent { WdbApp(showPairInitially = intent.getBooleanExtra(EXTRA_SHOW_PAIR, false)) }
+    }
+
+    companion object {
+        const val EXTRA_SHOW_PAIR = "com.waizusora.wdb.extra.SHOW_PAIR"
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun WdbApp() {
+private fun WdbApp(showPairInitially: Boolean) {
     val context = LocalContext.current
     var showSettings by remember { mutableStateOf(false) }
-    var showPair by remember { mutableStateOf(false) }
+    var showPair by remember { mutableStateOf(showPairInitially) }
     var address by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("") }
     var pairingCode by remember { mutableStateOf("") }
@@ -120,14 +125,21 @@ private fun WdbApp() {
                             fontWeight = FontWeight.SemiBold)
                         Text(
                             "Open Android Developer Options, choose Wireless debugging, then select " +
-                                "“Pair device with pairing code”. Enter the displayed endpoint and code here.",
+                                "“Pair device with pairing code”. A floating WDB shortcut is available " +
+                                "when overlay access has been granted.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Button(onClick = {
                             showPair = true
-                            val intent = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
-                            runCatching { context.startActivity(intent) }
+                            if (Settings.canDrawOverlays(context)) {
+                                runCatching {
+                                    context.startService(Intent(context, FloatingPairService::class.java))
+                                }
+                            }
+                            runCatching {
+                                context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
+                            }
                         }, modifier = Modifier.fillMaxWidth()) {
                             Text("Pair device")
                         }
@@ -145,7 +157,7 @@ private fun WdbApp() {
                             Text("ADB tools", style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.SemiBold)
                         }
-                        Text("Logcat, shell commands and PID lookup will be enabled when a verified ADB transport is available.",
+                        Text("Logcat, shell commands and PID lookup require a verified ADB transport. They are not available in this foundation build.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         AssistChip(onClick = {}, enabled = false, label = { Text("Transport not configured") })
@@ -168,7 +180,7 @@ private fun WdbApp() {
                         OutlinedTextField(pairingCode, { pairingCode = it.filter(Char::isDigit).take(12) },
                             label = { Text("Pairing code") }, singleLine = true,
                             modifier = Modifier.fillMaxWidth())
-                        Text("Pairing is not completed by this form yet. The secure ADB pairing transport must validate the code before success can be shown.",
+                        Text("The secure ADB pairing transport is not implemented yet. This form does not send or validate the code.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error)
                     }
