@@ -1,19 +1,18 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
     namespace = "com.waizusora.wdb"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.waizusora.wdb"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "0.2.0"
+        versionName = "0.3.0"
     }
 
     buildFeatures { compose = true }
@@ -22,8 +21,12 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+}
 
-    kotlinOptions { jvmTarget = "17" }
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
 }
 
 dependencies {
@@ -38,9 +41,9 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
 
     // Direct ADB client: SPAKE2 pairing, TLS transport, and Shell V2.
-    implementation("com.flyfishxu:kadb:2.1.4")
+    implementation("com.flyfishxu:kadb:2.1.5")
     // mDNS discovery for pairing and connect endpoints.
-    implementation("com.flyfishxu:kadb-mdns:2.1.4")
+    implementation("com.flyfishxu:kadb-mdns:2.1.5")
     // Android 8 requires a TLS 1.3 provider for Wireless Debugging pairing.
     implementation("org.conscrypt:conscrypt-android:2.5.2")
 
