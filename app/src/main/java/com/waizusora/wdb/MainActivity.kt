@@ -12,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -21,8 +22,29 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.waizusora.wdb.adb.WirelessAdbManager
 import com.waizusora.wdb.session.AdbSessionService
 import com.waizusora.wdb.session.FloatingPairService
+import kotlinx.coroutines.launch
+
+private data class AdbCommandOption(
+    val id: String,
+    val label: String,
+    val command: String
+)
+
+private val commandCatalog = listOf(
+    AdbCommandOption("model", "Device model", "getprop ro.product.model"),
+    AdbCommandOption("android", "Android version", "getprop ro.build.version.release"),
+    AdbCommandOption("serial", "Device serial", "getprop ro.serialno"),
+    AdbCommandOption("packages", "Installed packages", "pm list packages"),
+    AdbCommandOption("processes", "Process list", "ps -A"),
+    AdbCommandOption("battery", "Battery diagnostics", "dumpsys battery"),
+    AdbCommandOption("memory", "Memory summary", "dumpsys meminfo"),
+    AdbCommandOption("storage", "Storage usage", "df -h"),
+    AdbCommandOption("network", "Network interfaces", "ip addr"),
+    AdbCommandOption("uptime", "Device uptime", "uptime")
+)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,12 +61,39 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun WdbApp(showPairInitially: Boolean) {
     val context = LocalContext.current
+    val manager = remember(context) { WirelessAdbManager(context.applicationContext) }
+    val discovery by manager.discoveryState.collectAsState()
+    val scope = rememberCoroutineScope()
+
     var showSettings by remember { mutableStateOf(false) }
     var showPair by remember { mutableStateOf(showPairInitially) }
     var address by remember { mutableStateOf("") }
-    var port by remember { mutableStateOf("") }
+    var pairPort by remember { mutableStateOf("") }
+    var connectPort by remember { mutableStateOf("") }
     var pairingCode by remember { mutableStateOf("") }
+    var connectedModel by remember { mutableStateOf<String?>(null) }
     var sessionRunning by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var statusMessage by remember { mutableStateOf("Scanning for Wireless debugging services…") }
+    var commandOutput by remember { mutableStateOf("") }
+    var selectedCommands by remember { mutableStateOf(setOf("model", "android")) }
+    var packageName by remember { mutableStateOf("") }
+    var pidOutput by remember { mutableStateOf("") }
+    var logcatFilter by remember { mutableStateOf("") }
+    var logcatOutput by remember { mutableStateOf("") }
+
+    LaunchedEffect(manager) { manager.startDiscovery() }
+    DisposableEffect(manager) {
+        onDispose { manager.close() }
+    }
+
+    val filteredLogcat = remember(logcatOutput, logcatFilter) {
+        if (logcatFilter.isBlank()) logcatOutput
+        else logcatOutput.lineSequence()
+            .filter { it.contains(logcatFilter, ignoreCase = true) }
+            .take(250)
+            .joinToString("\n")
+    }
 
     MaterialTheme(
         colorScheme = darkColorScheme(
@@ -65,9 +114,9 @@ private fun WdbApp(showPairInitially: Boolean) {
                         }
                     },
                     actions = {
-                        IconButton(onClick = { showSettings = true }) {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings")
-                        }
+                        IconButton(onClick = {
+                            showSettings = true
+                        }) { Icon(Icons.Default.Settings, contentDescription = "Settings") }
                     }
                 )
             }
@@ -87,11 +136,12 @@ private fun WdbApp(showPairInitially: Boolean) {
                                 fontWeight = FontWeight.SemiBold)
                         }
                         Text(
-                            if (sessionRunning) "Session service active · ADB transport not connected"
-                            else "No active session",
+                            connectedModel?.let { "Connected · $it" } ?: "No authenticated ADB transport",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        Text(statusMessage, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Button(
                                 onClick = {
@@ -100,19 +150,27 @@ private fun WdbApp(showPairInitially: Boolean) {
                                             .setAction(AdbSessionService.ACTION_START)
                                     )
                                     sessionRunning = true
+                                    statusMessage = "Foreground session started."
                                 },
-                                enabled = !sessionRunning,
+                                enabled = connectedModel != null && !sessionRunning && !busy,
                                 modifier = Modifier.weight(1f)
                             ) { Text("Start") }
                             OutlinedButton(
                                 onClick = {
-                                    context.startService(
-                                        Intent(context, AdbSessionService::class.java)
-                                            .setAction(AdbSessionService.ACTION_STOP)
-                                    )
-                                    sessionRunning = false
+                                    busy = true
+                                    scope.launch {
+                                        runCatching { manager.disconnect() }
+                                        context.startService(
+                                            Intent(context, AdbSessionService::class.java)
+                                                .setAction(AdbSessionService.ACTION_STOP)
+                                        )
+                                        connectedModel = null
+                                        sessionRunning = false
+                                        busy = false
+                                        statusMessage = "ADB transport stopped."
+                                    }
                                 },
-                                enabled = sessionRunning,
+                                enabled = sessionRunning && !busy,
                                 modifier = Modifier.weight(1f)
                             ) { Text("Stop") }
                         }
@@ -121,15 +179,70 @@ private fun WdbApp(showPairInitially: Boolean) {
 
                 ElevatedCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Wireless pairing", style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "Open Android Developer Options, choose Wireless debugging, then select " +
-                                "“Pair device with pairing code”. A floating WDB shortcut is available " +
-                                "when overlay access has been granted.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Wireless debugging", style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.weight(1f))
+                            IconButton(onClick = { manager.startDiscovery() }) {
+                                Icon(Icons.Default.Refresh, contentDescription = "Refresh discovery")
+                            }
+                        }
+                        Text("Pairing endpoints", style = MaterialTheme.typography.titleSmall)
+                        if (discovery.pairDevices.isEmpty()) {
+                            Text("No pairing endpoint discovered. Open Pair device with pairing code on the target device.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            discovery.pairDevices.forEach { endpoint ->
+                                ListItem(
+                                    headlineContent = { Text(endpoint.name) },
+                                    supportingContent = { Text("${endpoint.host}:${endpoint.port} · pairing") },
+                                    trailingContent = {
+                                        TextButton(onClick = {
+                                            address = endpoint.host
+                                            pairPort = endpoint.port.toString()
+                                            showPair = true
+                                        }) { Text("Use") }
+                                    }
+                                )
+                            }
+                        }
+
+                        HorizontalDivider()
+                        Text("Connect endpoints", style = MaterialTheme.typography.titleSmall)
+                        if (discovery.connectDevices.isEmpty()) {
+                            Text("Waiting for a paired Wireless debugging device…",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            discovery.connectDevices.forEach { endpoint ->
+                                ListItem(
+                                    headlineContent = { Text(endpoint.name) },
+                                    supportingContent = { Text("${endpoint.host}:${endpoint.port} · ADB TLS") },
+                                    trailingContent = {
+                                        TextButton(
+                                            enabled = !busy,
+                                            onClick = {
+                                                busy = true
+                                                statusMessage = "Connecting to ${endpoint.host}…"
+                                                scope.launch {
+                                                    runCatching {
+                                                        manager.connect(endpoint.host, endpoint.port)
+                                                    }.onSuccess { model ->
+                                                        connectedModel = model
+                                                        statusMessage = "Authenticated ADB transport ready."
+                                                    }.onFailure { error ->
+                                                        connectedModel = null
+                                                        statusMessage = error.message ?: "ADB connection failed."
+                                                    }
+                                                    busy = false
+                                                }
+                                            }
+                                        ) { Text("Connect") }
+                                    }
+                                )
+                            }
+                        }
                         Button(onClick = {
                             showPair = true
                             if (Settings.canDrawOverlays(context)) {
@@ -143,24 +256,127 @@ private fun WdbApp(showPairInitially: Boolean) {
                         }, modifier = Modifier.fillMaxWidth()) {
                             Text("Pair device")
                         }
-                        TextButton(onClick = {
-                            context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS))
-                        }) { Text("Open wireless settings") }
+                        Text("mDNS: ${discovery.status}", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
 
                 ElevatedCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Code, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text("ADB tools", style = MaterialTheme.typography.titleLarge,
+                            Text("ADB command catalog", style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.SemiBold)
                         }
-                        Text("Logcat, shell commands and PID lookup require a verified ADB transport. They are not available in this foundation build.",
-                            style = MaterialTheme.typography.bodyMedium,
+                        Text("Select the shell operations to execute on the connected device.",
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        AssistChip(onClick = {}, enabled = false, label = { Text("Transport not configured") })
+                        commandCatalog.forEach { item ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(
+                                    checked = item.id in selectedCommands,
+                                    onCheckedChange = { checked ->
+                                        selectedCommands = if (checked) selectedCommands + item.id
+                                        else selectedCommands - item.id
+                                    }
+                                )
+                                Column(Modifier.weight(1f)) {
+                                    Text(item.label, style = MaterialTheme.typography.bodyMedium)
+                                    Text(item.command, style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                        Button(
+                            enabled = connectedModel != null && selectedCommands.isNotEmpty() && !busy,
+                            onClick = {
+                                busy = true
+                                scope.launch {
+                                    val output = buildString {
+                                        commandCatalog.filter { it.id in selectedCommands }.forEach { item ->
+                                            append("$ ").append(item.command).append("\n")
+                                            val result = runCatching { manager.execute(item.command) }
+                                            append(result.getOrElse { it.message ?: "Command failed." })
+                                            append("\n\n")
+                                        }
+                                    }
+                                    commandOutput = output.takeLast(24_000)
+                                    busy = false
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Run selected commands") }
+                        if (commandOutput.isNotBlank()) {
+                            SelectionContainer {
+                                Text(commandOutput, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("PID lookup", style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold)
+                        OutlinedTextField(
+                            value = packageName,
+                            onValueChange = { packageName = it.trim().take(255) },
+                            label = { Text("Package / process name") },
+                            placeholder = { Text("com.example.app") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedButton(
+                            enabled = connectedModel != null && packageName.matches(Regex("[A-Za-z0-9._]+")) && !busy,
+                            onClick = {
+                                busy = true
+                                scope.launch {
+                                    pidOutput = runCatching {
+                                        manager.execute("pidof $packageName").ifBlank { "No process found." }
+                                    }.getOrElse { it.message ?: "PID lookup failed." }
+                                    busy = false
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Run pidof") }
+                        if (pidOutput.isNotBlank()) Text(pidOutput, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+
+                ElevatedCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Logcat capture", style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.SemiBold)
+                        OutlinedTextField(
+                            value = logcatFilter,
+                            onValueChange = { logcatFilter = it },
+                            label = { Text("Filter text (optional)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Button(
+                            enabled = connectedModel != null && !busy,
+                            onClick = {
+                                busy = true
+                                scope.launch {
+                                    logcatOutput = runCatching {
+                                        manager.execute("logcat -d -v threadtime")
+                                    }.getOrElse { it.message ?: "Logcat capture failed." }.takeLast(60_000)
+                                    busy = false
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Capture logcat") }
+                        if (logcatOutput.isNotBlank()) {
+                            Text("${filteredLogcat.lineSequence().count()} visible lines",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            SelectionContainer {
+                                Text(filteredLogcat.takeLast(24_000),
+                                    style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
                     }
                 }
             }
@@ -174,25 +390,40 @@ private fun WdbApp(showPairInitially: Boolean) {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(address, { address = it }, label = { Text("IP address") },
                             singleLine = true, modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(port, { port = it.filter(Char::isDigit).take(5) },
+                        OutlinedTextField(pairPort, { pairPort = it.filter(Char::isDigit).take(5) },
                             label = { Text("Pairing port") }, singleLine = true,
                             modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(pairingCode, { pairingCode = it.filter(Char::isDigit).take(12) },
-                            label = { Text("Pairing code") }, singleLine = true,
+                        OutlinedTextField(pairingCode, { pairingCode = it.filter(Char::isDigit).take(6) },
+                            label = { Text("6-digit pairing code") }, singleLine = true,
                             modifier = Modifier.fillMaxWidth())
-                        Text("The secure ADB pairing transport is not implemented yet. This form does not send or validate the code.",
+                        Text("Keep the system pairing dialog open while pairing completes.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = { showPair = false }) { Text("Close") }
+                    TextButton(
+                        enabled = !busy && address.isNotBlank() && pairPort.toIntOrNull() in 1..65535 &&
+                            pairingCode.matches(Regex("[0-9]{6}")),
+                        onClick = {
+                            busy = true
+                            statusMessage = "Performing secure Wireless debugging pairing…"
+                            val host = address
+                            val port = pairPort.toInt()
+                            val code = pairingCode
+                            scope.launch {
+                                runCatching { manager.pair(host, port, code) }
+                                    .onSuccess { statusMessage = "Pairing handshake succeeded. Waiting for connect endpoint." }
+                                    .onFailure { statusMessage = it.message ?: "Pairing failed." }
+                                pairingCode = ""
+                                busy = false
+                                showPair = false
+                            }
+                        }
+                    ) { Text("Pair") }
                 },
                 dismissButton = {
-                    TextButton(onClick = {
-                        showPair = false
-                        context.startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS))
-                    }) { Text("Developer options") }
+                    TextButton(onClick = { showPair = false; pairingCode = "" }) { Text("Cancel") }
                 }
             )
         }
@@ -214,7 +445,7 @@ private fun WdbApp(showPairInitially: Boolean) {
                                 Uri.parse("package:${context.packageName}"))
                             runCatching { context.startActivity(intent) }
                         }, modifier = Modifier.fillMaxWidth()) { Text("Request exemption") }
-                        Text("These capabilities require explicit approval in Android Settings. They do not prevent force-stop or guarantee background survival.",
+                        Text("A foreground service and partial wake lock improve session continuity but cannot prevent force-stop or guarantee process survival.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
