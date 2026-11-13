@@ -37,7 +37,7 @@ Pairing success and transport connection are distinct states. A pairing handshak
 
 The checkable command catalog exposes common device diagnostics. The custom command field executes explicit user-authored shell commands through the authenticated ADB transport. PID lookup validates package/process names before invoking `pidof`.
 
-Live Logcat uses `logcat -v threadtime` through adb-kt's Shell V2 Flow API. The UI collects stdout and stderr chunks, bounds retained output, supports text filtering, and cancels the collection job when the user stops streaming or ends the ADB session. Snapshot capture uses `logcat -d -t 500 -v threadtime`. Clear Logcat executes `logcat -c` only after checking the active authenticated transport and reports the command outcome in the UI.
+Live Logcat uses `logcat -b all -v threadtime` through adb-kt's Shell V2 Flow API. The UI collects stdout and stderr chunks, bounds retained output, supports text filtering, and cancels the collection job when the user stops streaming or ends the ADB session. Snapshot capture uses `logcat -b all -d -t 500 -v threadtime`. Clear Logcat executes `logcat -c` only after checking the active authenticated transport and reports the command outcome in the UI.
 
 ## Background execution and power
 
