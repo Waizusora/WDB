@@ -5,6 +5,8 @@ import com.flyfishxu.kadb.Kadb
 import com.flyfishxu.kadb.mdns.KadbMdnsAndroid
 import com.flyfishxu.kadb.mdns.MdnsDiscoveryState
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.StateFlow
 import java.io.Closeable
@@ -22,6 +24,9 @@ class WirelessAdbManager(context: Context) : Closeable {
 
     @Volatile
     private var activeClient: Kadb? = null
+
+    private val _connectedModel = MutableStateFlow<String?>(null)
+    val connectedModel = _connectedModel.asStateFlow()
 
     fun startDiscovery() = mdns.start()
 
@@ -50,6 +55,7 @@ class WirelessAdbManager(context: Context) : Closeable {
                 .ifBlank { "Android device" }
             val previous = activeClient
             activeClient = candidate
+            _connectedModel.value = model
             previous?.close()
             model
         } catch (error: Throwable) {
@@ -67,6 +73,7 @@ class WirelessAdbManager(context: Context) : Closeable {
     suspend fun disconnect() = withContext(Dispatchers.IO) {
         activeClient?.close()
         activeClient = null
+        _connectedModel.value = null
     }
 
     fun isConnected(): Boolean = activeClient?.connectionCheck() == true
@@ -74,6 +81,7 @@ class WirelessAdbManager(context: Context) : Closeable {
     override fun close() {
         runCatching { activeClient?.close() }
         activeClient = null
+        _connectedModel.value = null
         mdns.close()
     }
 
