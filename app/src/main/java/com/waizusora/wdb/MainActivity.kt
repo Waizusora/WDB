@@ -586,7 +586,10 @@ private fun WdbApp(showPairInitially: Boolean) {
                 onDismissRequest = { showSettings = false },
                 title = { Text("Settings") },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(
+                        modifier = Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
                         Text("File transfer directory", style = MaterialTheme.typography.titleSmall)
                         Text(
                             transferDirectoryUri?.let { "Selected: ${androidx.documentfile.provider.DocumentFile.fromTreeUri(context, it)?.name ?: it.lastPathSegment}" }
