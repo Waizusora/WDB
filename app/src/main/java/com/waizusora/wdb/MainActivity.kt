@@ -552,7 +552,7 @@ private fun WdbApp(showPairInitially: Boolean) {
                                                 statusMessage = "Logcat stream saved: ${logcatFile?.name ?: "WDB_Logcat.txt"}"
                                             } catch (cancelled: CancellationException) {
                                                 if (savedBytes == 0L) logcatFile?.delete()
-                                                else statusMessage = "Partial Logcat saved: ${logcatFile?.name}"
+                                                else statusMessage = "Partial Logcat saved: ${logcatFile.name}"
                                                 throw cancelled
                                             } catch (error: Exception) {
                                                 if (savedBytes == 0L) logcatFile?.delete()
