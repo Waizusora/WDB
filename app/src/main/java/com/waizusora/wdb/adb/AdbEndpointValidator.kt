@@ -1,5 +1,8 @@
 package com.waizusora.wdb.adb
 
+import java.net.Inet6Address
+import java.net.InetAddress
+
 /**
  * Validates numeric network endpoints before opening an ADB transport.
  *
@@ -21,7 +24,8 @@ internal object AdbEndpointValidator {
                     part.toIntOrNull()?.let { it in 0..255 } == true
             }
         }
-        val ipv6 = host.contains(':') && host.matches(Regex("[0-9a-fA-F:.%]+"))
+        val ipv6 = host.contains(':') && host.matches(Regex("[0-9a-fA-F:.%]+")) &&
+            runCatching { InetAddress.getByName(host) is Inet6Address }.getOrDefault(false)
         require(ipv4 || ipv6) {
             "Enter a numeric IPv4 or IPv6 address."
         }
