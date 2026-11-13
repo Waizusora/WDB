@@ -52,7 +52,7 @@ class WirelessAdbManager(
     }
 
     suspend fun connect(host: String, port: Int): String = withContext(Dispatchers.IO) {
-        validateEndpoint(host, port)
+        AdbEndpointValidator.validate(host, port)
         val candidate = AdbClient.connectTls(
             host = host,
             port = port,
