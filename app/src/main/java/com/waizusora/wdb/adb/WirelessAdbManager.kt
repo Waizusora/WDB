@@ -82,7 +82,7 @@ class WirelessAdbManager(context: Context) : Closeable {
         require(port in 1..65535) { "Port must be between 1 and 65535." }
         val ipv4 = host.split(".").let { parts ->
             parts.size == 4 && parts.all { part ->
-                part.isNotEmpty() && part.all(Char::isDigit) && part.toIntOrNull() in 0..255
+                part.isNotEmpty() && part.all(Char::isDigit) && part.toIntOrNull()?.let { it in 0..255 } == true
             }
         }
         val ipv6 = host.contains(':') && host.matches(Regex("[0-9a-fA-F:.%]+"))
