@@ -1,47 +1,66 @@
 # WDB
 
-WDB is an Android application project for managing Android Wireless Debugging workflows through a focused graphical interface.
+WDB is an Android Wireless Debugging client with a minimal Material 3 interface. It pairs with Android devices using the ADB pairing protocol and connects directly to `adbd` over the authenticated Wireless Debugging TLS transport.
 
-## Project status
+## Application
 
-The repository is being initialized. The first implementation establishes the Android application structure, permission model, foreground session lifecycle, pairing hand-off to Android Developer Options, and the user interface.
+- Application ID: `com.waizusora.wdb`
+- Minimum Android version: API 26
+- Target SDK: API 35
+- Compile SDK: API 36
+- Language and UI: Kotlin, Jetpack Compose, Material 3
+- ADB implementation: Kadb 2.1.4 (Apache License 2.0)
 
-**ADB protocol support is a separate transport implementation.** A successful return from Android Settings, a saved pairing code, or a visible IP address must never be treated as proof that an ADB pairing or transport handshake succeeded. The application must report a connected state only after the transport layer confirms it.
+## Implemented capabilities
 
-## Requirements
+- ADB wireless pairing with the six-digit pairing code shown by Android.
+- mDNS discovery of pairing and connection endpoints.
+- TLS ADB connection with a protocol-level shell handshake before showing Connected.
+- AES-GCM encrypted ADB host identity using Android Keystore.
+- Foreground session service and partial wake lock.
+- Optional floating pairing shortcut, gated by user-granted overlay access.
+- Checkable shell-command catalog, `pidof` package lookup, and Logcat snapshot capture with text filtering.
 
-- Android Studio with a recent stable Android Gradle Plugin toolchain
+Logcat capture currently uses `logcat -d` to retrieve a bounded snapshot. Continuous streaming, additional command families, and automated protocol tests remain under development.
+
+## Build requirements
+
+- Android Studio with Android Gradle Plugin 8.13.1 support
+- Gradle 8.13
 - JDK 17
-- Android SDK platform 35 or later
-- Android device with Wireless debugging support (Android 11 or later)
+- Android SDK Platform 36
+- Android device with Wireless debugging (Android 11 or later recommended)
 
-## Build
-
-Open the repository in Android Studio and run the `app` configuration. Alternatively:
+Open the repository in Android Studio and run the `app` configuration. If Gradle 8.13 is installed locally:
 
 ```bash
-./gradlew assembleDebug
+gradle --no-daemon assembleDebug
 ```
 
 ## Wireless debugging workflow
 
-1. Enable Developer Options and Wireless debugging on the target Android device.
-2. Use **Pair device** to open Android Developer Options.
-3. In the system Wireless debugging screen, select **Pair device with pairing code**.
-4. Enter the displayed pairing address, port, and code in WDB's pairing interface.
-5. Complete the pairing protocol and verify the device identity before reporting success.
-6. Start a separately established ADB transport session before issuing shell or logcat commands.
+1. Enable Developer Options and Wireless debugging on the target device.
+2. Tap **Pair device** in WDB. Android opens Developer Options; select Wireless debugging and then **Pair device with pairing code**.
+3. Keep the system pairing dialog visible and enter its IP address, pairing port, and six-digit code in WDB.
+4. WDB performs the ADB SPAKE2 pairing exchange over TLS. Pairing success is reported only when the library completes the handshake.
+5. Wait for mDNS to discover the separate ADB connection endpoint.
+6. Tap **Connect** for the discovered endpoint. WDB verifies the ADB transport by executing a shell handshake.
+7. Tap **Start** to keep the authenticated session visible through a foreground service. Use **Stop** to close the transport and release the wake lock.
 
-Android does not expose a stable public intent that navigates directly to the pairing-code dialog on every device. WDB therefore opens the relevant system settings screen and provides a user-controlled overlay entry point where permitted.
+Android does not expose a stable public intent that opens the pairing-code dialog on every OEM build. WDB therefore opens Developer Options and provides an optional floating shortcut when overlay access is granted.
 
 ## Permissions and background execution
 
-WDB requests only permissions required by enabled features. Overlay access and exemption from battery optimization are special user-granted capabilities and are never silently enabled. A foreground service and a partial wake lock improve session continuity but cannot guarantee immunity from force-stop, OEM process management, or system termination.
+WDB requests network, notification, foreground-service, and wake-lock permissions required by the implemented features. Overlay access and battery-optimization exemption are special user-granted capabilities. A foreground service and partial wake lock improve session continuity but cannot guarantee immunity from force-stop, OEM process management, or system termination.
 
 ## Security
 
-Pairing codes and connection credentials are sensitive. Do not log them, persist them in plaintext, or include them in crash reports. Only connect to devices explicitly selected by the user.
+The ADB host private key is encrypted with AES-GCM using a non-exportable Android Keystore key. Pairing codes are held only for the pairing operation and are not written to logs. Connect only to devices explicitly selected by the user.
+
+## Third-party components
+
+Kadb and its optional mDNS module are Apache-2.0 licensed. Conscrypt is included for TLS 1.3 pairing compatibility on older supported Android releases. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## License
 
-Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
+WDB is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
