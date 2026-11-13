@@ -128,7 +128,7 @@ class WirelessAdbManager(
     }
 
     suspend fun pushFile(uri: Uri, remotePath: String): String = withContext(Dispatchers.IO) {
-        require(remotePath.startsWith("/") && !remotePath.contains('\\u0000')) {
+        require(remotePath.startsWith("/") && remotePath.none { it.code == 0 }) {
             "Remote destination must be an absolute device path."
         }
         val input = appContext.contentResolver.openInputStream(uri)
