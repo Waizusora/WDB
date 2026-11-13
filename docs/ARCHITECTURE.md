@@ -14,7 +14,7 @@
 - `WdbApplication` configures the encrypted ADB identity store and owns the process-wide `WirelessAdbManager`.
 - `MainActivity` renders the user interface and explicitly navigates to Android system settings.
 - `FloatingPairService` owns the optional, user-dismissable overlay shortcut. It does not collect credentials; tapping it opens the in-app pairing form.
-- `AdbSessionService` owns the foreground session lifetime and a partial wake lock.
+- `AdbSessionService` owns the foreground session lifetime and a partial wake lock. Its process-wide `AdbSessionState` exposes service status to the UI across Activity recreation.
 - Kadb implements the ADB pairing protocol, TLS transport negotiation, ADB stream multiplexing, and shell execution.
 - Kadb mDNS discovery reports pairing and connection endpoints separately.
 
@@ -35,7 +35,7 @@ Pairing success and transport connection are distinct states. A pairing handshak
 
 ## Command execution
 
-The current command catalog executes a bounded set of shell commands through the authenticated ADB transport. PID lookup validates package/process names before invoking `pidof`. Logcat capture uses `logcat -d -v threadtime`, retains a bounded output snapshot, and applies a local text filter. Live logcat streaming is not yet implemented.
+The current command catalog executes a bounded set of shell commands through the authenticated ADB transport. PID lookup validates package/process names before invoking `pidof`. Logcat capture uses `logcat -d -t 500 -v threadtime`, retains a bounded output snapshot, and applies a local text filter. Live logcat streaming is not yet implemented.
 
 ## Background execution
 
