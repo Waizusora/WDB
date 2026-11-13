@@ -8,8 +8,8 @@
 - [x] Foreground session lifecycle, notification, and partial wake lock
 - [x] User-controlled overlay and battery-optimization settings
 - [x] ADB SPAKE2 pairing using the displayed six-digit code
-- [x] mDNS discovery of separate pairing and ADB connection endpoints
-- [x] Authenticated ADB TLS transport and shell handshake validation
+- [x] Android NSD/mDNS discovery of separate pairing and ADB connection endpoints
+- [x] Authenticated ADB TLS transport and Shell V2 handshake validation
 - [x] AES-GCM encrypted host private-key persistence using Android Keystore
 - [x] Checkable shell-command catalog
 - [x] PID lookup using validated package/process names and `pidof`
