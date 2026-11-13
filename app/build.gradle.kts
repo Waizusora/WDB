@@ -17,6 +17,12 @@ android {
 
     buildFeatures { compose = true }
 
+    packaging {
+        resources {
+            excludes += "META-INF/LICENSE.md"
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
