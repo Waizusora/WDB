@@ -19,7 +19,7 @@
 
 ## Remaining work
 
-- [ ] Add live Logcat streaming with cancellation and bounded backpressure
+- [x] Add live Logcat streaming with cancellation and bounded output
 - [ ] Expand the command catalog to cover additional ADB host and device command families
 - [ ] Add command-specific argument forms and explicit confirmation for destructive operations
 - [ ] Add pairing, TLS reconnect, shell, and mDNS unit/instrumentation tests
