@@ -41,7 +41,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
 
     // Pure Kotlin ADB protocol, SPAKE2 pairing, TLS 1.3, Shell V2, and streaming APIs.
-    implementation("com.github.rhythmcache:adb-kt:1.0.13")
+    implementation("com.github.rhythmcache:adb-kt:394dea235b4bfb2ebbfba5a821bbe4f6cd59e460")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
