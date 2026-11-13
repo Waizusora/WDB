@@ -38,7 +38,7 @@ class WirelessAdbManager(
     fun refreshDiscovery() = discovery.restart()
 
     suspend fun pair(host: String, port: Int, pairingCode: String) = withContext(Dispatchers.IO) {
-        validateEndpoint(host, port)
+        AdbEndpointValidator.validate(host, port)
         require(pairingCode.matches(Regex("[0-9]{6}"))) {
             "The Wireless debugging pairing code must contain exactly six digits."
         }
@@ -97,7 +97,7 @@ class WirelessAdbManager(
 
     fun logcatFlow(): Flow<ShellChunk> {
         val client = activeClient ?: throw IllegalStateException("No authenticated ADB transport.")
-        return client.shellFlow("logcat -v threadtime").flowOn(Dispatchers.IO)
+        return client.shellFlow("logcat -b all -v threadtime").flowOn(Dispatchers.IO)
     }
 
     suspend fun disconnect() = withContext(Dispatchers.IO) {
@@ -120,18 +120,6 @@ class WirelessAdbManager(
         discovery.close()
     }
 
-    private fun validateEndpoint(host: String, port: Int) {
-        require(host.isNotBlank() && host.length <= 253) { "A valid device IP address is required." }
-        require(port in 1..65535) { "Port must be between 1 and 65535." }
-        val ipv4 = host.split(".").let { parts ->
-            parts.size == 4 && parts.all { part ->
-                part.isNotEmpty() && part.all(Char::isDigit) &&
-                    part.toIntOrNull()?.let { it in 0..255 } == true
-            }
-        }
-        val ipv6 = host.contains(':') && host.matches(Regex("[0-9a-fA-F:.%]+"))
-        require(ipv4 || ipv6) { "Enter a numeric IPv4 or IPv6 address." }
-    }
 
     private companion object {
         const val CONNECT_TIMEOUT_MS = 30_000L
