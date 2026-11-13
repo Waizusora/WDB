@@ -6,7 +6,7 @@
 - Display name: WDB
 - UI: Kotlin, Jetpack Compose, Material 3
 - Minimum Android version: API 26
-- Compile SDK: API 37
+- Compile SDK: API 36
 - Target SDK: API 35
 
 ## Components
