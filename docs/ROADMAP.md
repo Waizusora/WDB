@@ -13,7 +13,7 @@
 - [x] AES-GCM encrypted host private-key persistence using Android Keystore
 - [x] Checkable shell-command catalog and custom shell command runner
 - [x] PID lookup using validated package/process names and `pidof`
-- [x] Logcat snapshot, live Shell V2 streaming, filtering, and Clear Logcat
+- [x] Logcat snapshot, live Shell V2 streaming, filtering, Clear Logcat, and automatic SAF file export
 - [x] In-app Open Source Licenses information
 - [x] Optional environment-based release signing and GitHub Release workflow
 - [x] Signing-key and secret-file exclusions in `.gitignore`
@@ -24,8 +24,8 @@
 
 - [x] Add initial JVM tests for numeric ADB endpoint validation
 - [ ] Add pairing, TLS reconnect, shell streaming, and mDNS instrumentation tests
-- [ ] Add progress reporting and cancellation for large file transfers
-- [ ] Add active forward/reverse rule listing and cleanup UI
+- [x] Add transfer progress, throughput/ETA reporting, and cancellation controls for file transfers
+- [x] Add in-session forward/reverse rule listing and cleanup UI
 - [ ] Add UI tests for pairing, permission denial, reconnect, Logcat cancellation, and Stop behavior
 - [ ] Verify API 26–35 behavior on physical devices and OEM variants
 - [x] Add ADB host-side package install/uninstall workflows, including split APK bundles
