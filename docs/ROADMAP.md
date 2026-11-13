@@ -6,7 +6,9 @@
 - [x] Minimal dark Material 3 interface
 - [x] Developer Options hand-off
 - [x] Foreground session lifecycle and partial wake lock
-- [x] Explicit settings entry points for overlay and battery optimization
+- [x] Settings entry points for overlay and battery optimization
+- [x] Floating overlay shortcut that reopens the in-app pairing form
+- [x] Launcher vector icon
 - [x] Initial Apache License 2.0 and English technical documentation
 
 ## Required before claiming functional ADB support
@@ -14,12 +16,13 @@
 - [ ] Implement ADB pairing protocol with the pairing endpoint and user-provided pairing code
 - [ ] Persist device pairing identity securely using Android Keystore-backed storage
 - [ ] Implement authenticated ADB TLS connection and transport state machine
-- [ ] Add floating overlay pairing-code entry with correct overlay permission and lifecycle handling
+- [ ] Add a device discovery workflow for wireless debugging endpoints where Android APIs permit it
 - [ ] Add command catalog with validated argument models and per-command selection
 - [ ] Add Logcat streaming, filtering, cancellation, and bounded output buffering
 - [ ] Add PID lookup using `pidof` and package-name search with safe argument handling
 - [ ] Add connection, pairing, and command protocol tests
 - [ ] Verify foreground-service behavior and notification permission on API 26–35
+- [ ] Build and run instrumentation tests on physical Android devices
 
 ## Acceptance criteria
 
