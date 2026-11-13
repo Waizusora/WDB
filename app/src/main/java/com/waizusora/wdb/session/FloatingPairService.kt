@@ -49,7 +49,6 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import com.waizusora.wdb.WdbApplication
 import kotlinx.coroutines.CoroutineScope
