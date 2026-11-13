@@ -217,7 +217,7 @@ private fun WdbApp(showPairInitially: Boolean) {
                             Text("Wireless debugging", style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.weight(1f))
-                            IconButton(onClick = { manager.startDiscovery() }) {
+                            IconButton(onClick = { manager.refreshDiscovery() }) {
                                 Icon(Icons.Default.Refresh, contentDescription = "Refresh discovery")
                             }
                         }
