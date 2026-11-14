@@ -128,6 +128,7 @@ private fun WdbApp() {
         }
     }
     var showSettings by remember { mutableStateOf(false) }
+    var showClearLogcatConfirmation by remember { mutableStateOf(false) }
     var showOpenSourceLicenses by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var commandOutput by remember { mutableStateOf("") }
@@ -461,18 +462,7 @@ private fun WdbApp() {
                                 if (!manager.isConnected()) {
                                     statusMessage = "Clear Logcat: device is not connected."
                                 } else {
-                                    busy = true
-                                    scope.launch {
-                                        val result = runCatching { manager.execute("logcat -c") }
-                                        if (result.isSuccess && !result.getOrThrow().contains("[exit code")) {
-                                            logcatOutput = ""
-                                            statusMessage = "Logcat buffer cleared successfully."
-                                        } else {
-                                            statusMessage = "Clear Logcat failed: " +
-                                                (result.getOrNull() ?: result.exceptionOrNull()?.message ?: "ADB command failed.")
-                                        }
-                                        busy = false
-                                    }
+                                    showClearLogcatConfirmation = true
                                 }
                             }) { Text("Clear Logcat") }
                         }
@@ -577,6 +567,40 @@ private fun WdbApp() {
                     }
                 }
             }
+        }
+
+        if (showClearLogcatConfirmation) {
+            AlertDialog(
+                onDismissRequest = { showClearLogcatConfirmation = false },
+                title = { Text("Clear device Logcat?") },
+                text = {
+                    Text("This clears the Android device's current log buffers. Existing log entries cannot be restored.")
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showClearLogcatConfirmation = false
+                        if (!manager.isConnected()) {
+                            statusMessage = "Clear Logcat: device is no longer connected."
+                        } else {
+                            busy = true
+                            scope.launch {
+                                val result = runCatching { manager.execute("logcat -c") }
+                                if (result.isSuccess && !result.getOrThrow().contains("[exit code")) {
+                                    logcatOutput = ""
+                                    statusMessage = "Logcat buffer cleared successfully."
+                                } else {
+                                    statusMessage = "Clear Logcat failed: " +
+                                        (result.getOrNull() ?: result.exceptionOrNull()?.message ?: "ADB command failed.")
+                                }
+                                busy = false
+                            }
+                        }
+                    }) { Text("Clear buffers") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showClearLogcatConfirmation = false }) { Text("Cancel") }
+                }
+            )
         }
 
         if (showSettings) {
