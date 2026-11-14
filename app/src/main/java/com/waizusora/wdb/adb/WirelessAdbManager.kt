@@ -43,6 +43,15 @@ class WirelessAdbManager(
     @Volatile
     private var activeClient: AdbClient? = null
 
+    /**
+     * Serializes connection publication and teardown without holding the lock during
+     * network I/O. A generation invalidates handshakes that finish after a newer
+     * connect, disconnect, or manager close has taken ownership of the lifecycle.
+     */
+    private val connectionLock = Any()
+    private var connectionGeneration = 0L
+    private var managerClosed = false
+
     private val _connectedModel = MutableStateFlow<String?>(null)
     val connectedModel = _connectedModel.asStateFlow()
     private val _portRules = MutableStateFlow<List<PortForwardRule>>(emptyList())
@@ -88,6 +97,10 @@ class WirelessAdbManager(
 
     suspend fun connect(host: String, port: Int): String = withContext(Dispatchers.IO) {
         AdbEndpointValidator.validate(host, port)
+        val attemptGeneration = synchronized(connectionLock) {
+            check(!managerClosed) { "ADB manager is already closed." }
+            ++connectionGeneration
+        }
         val candidate = AdbClient.connectTls(
             host = host,
             port = port,
@@ -101,9 +114,17 @@ class WirelessAdbManager(
             }
             val model = candidate.shell("getprop ro.product.model").stdoutText.trim()
                 .ifBlank { "Android device" }
-            val previous = activeClient
-            activeClient = candidate
-            _connectedModel.value = model
+
+            val previous = synchronized(connectionLock) {
+                check(!managerClosed && connectionGeneration == attemptGeneration) {
+                    "ADB connection attempt was superseded by a newer lifecycle operation."
+                }
+                activeClient.also {
+                    activeClient = candidate
+                    _connectedModel.value = model
+                    _portRules.value = emptyList()
+                }
+            }
             runCatching { previous?.close() }
             model
         } catch (error: Throwable) {
@@ -300,9 +321,10 @@ class WirelessAdbManager(
         "Reverse removed: device:$devicePort"
     }
 
-    private fun requireClient(): AdbClient =
+    private fun requireClient(): AdbClient = synchronized(connectionLock) {
         activeClient?.takeIf { !it.isClosed }
             ?: throw IllegalStateException("No authenticated ADB transport.")
+    }
 
     private fun validatePort(port: Int) {
         require(port in 1..65535) { "TCP port must be between 1 and 65535." }
@@ -313,25 +335,42 @@ class WirelessAdbManager(
         return client.shellFlow("logcat -b all -v threadtime").flowOn(Dispatchers.IO)
     }
 
-    suspend fun disconnect() = withContext(Dispatchers.IO) {
-        val client = activeClient
-        activeClient = null
-        _connectedModel.value = null
-        _portRules.value = emptyList()
-        runCatching { client?.close() }
+    suspend fun disconnect() {
+        // Invalidate in-flight TLS handshakes before dispatching socket teardown.
+        val client = synchronized(connectionLock) {
+            ++connectionGeneration
+            activeClient.also {
+                activeClient = null
+                _connectedModel.value = null
+                _portRules.value = emptyList()
+            }
+        }
+        withContext(Dispatchers.IO) {
+            runCatching { client?.close() }
+        }
     }
 
-    fun isConnected(): Boolean {
+    fun isConnected(): Boolean = synchronized(connectionLock) {
         val connected = activeClient?.isClosed == false
-        if (!connected) _connectedModel.value = null
-        return connected
+        if (!connected) {
+            activeClient = null
+            _connectedModel.value = null
+            _portRules.value = emptyList()
+        }
+        connected
     }
 
     override fun close() {
-        runCatching { activeClient?.close() }
-        activeClient = null
-        _connectedModel.value = null
-        _portRules.value = emptyList()
+        val client = synchronized(connectionLock) {
+            managerClosed = true
+            ++connectionGeneration
+            activeClient.also {
+                activeClient = null
+                _connectedModel.value = null
+                _portRules.value = emptyList()
+            }
+        }
+        runCatching { client?.close() }
         discovery.close()
     }
 
