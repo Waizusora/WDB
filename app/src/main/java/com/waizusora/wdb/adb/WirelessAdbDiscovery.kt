@@ -22,8 +22,9 @@ data class WirelessDiscoveryState(
 /**
  * Discovers Android Wireless Debugging pairing and TLS connection endpoints.
  *
- * Android's NsdManager is used directly so endpoint discovery does not depend
- * on an additional native daemon or a proprietary discovery service.
+ * Each discovery run owns distinct listeners and a generation token. Delayed
+ * callbacks from a stopped run are ignored so they cannot repopulate stale
+ * endpoints after refresh or shutdown.
  */
 class WirelessAdbDiscovery(context: Context) : Closeable {
     private val nsdManager = context.applicationContext.getSystemService(NsdManager::class.java)
@@ -32,74 +33,119 @@ class WirelessAdbDiscovery(context: Context) : Closeable {
     private val _state = MutableStateFlow(WirelessDiscoveryState())
     val state = _state.asStateFlow()
 
-    @Volatile
     private var started = false
-
-    private val pairingListener = createListener(true)
-    private val connectListener = createListener(false)
+    private var generation = 0L
+    private var pairingListener: NsdManager.DiscoveryListener? = null
+    private var connectListener: NsdManager.DiscoveryListener? = null
 
     fun start() {
-        synchronized(lock) {
+        val token = synchronized(lock) {
             if (started) return
             started = true
-            _state.value = _state.value.copy(status = "Scanning for Wireless debugging services…")
+            generation += 1
+            endpoints.clear()
+            _state.value = WirelessDiscoveryState(
+                status = "Scanning for Wireless debugging services…"
+            )
+            generation
         }
-        runCatching {
-            nsdManager.discoverServices(PAIRING_SERVICE, NsdManager.PROTOCOL_DNS_SD, pairingListener)
-        }.onFailure { updateStatus("Pairing discovery failed: " + it.message) }
-        runCatching {
-            nsdManager.discoverServices(CONNECT_SERVICE, NsdManager.PROTOCOL_DNS_SD, connectListener)
-        }.onFailure { updateStatus("Connection discovery failed: " + it.message) }
+
+        val pairing = createListener(pairing = true, token = token)
+        val connect = createListener(pairing = false, token = token)
+        synchronized(lock) {
+            if (!isCurrentLocked(token)) return
+            pairingListener = pairing
+            connectListener = connect
+        }
+
+        try {
+            nsdManager.discoverServices(
+                PAIRING_SERVICE,
+                NsdManager.PROTOCOL_DNS_SD,
+                pairing
+            )
+        } catch (error: Exception) {
+            updateStatus(token, "Pairing discovery failed: ${error.message}")
+        }
+
+        try {
+            nsdManager.discoverServices(
+                CONNECT_SERVICE,
+                NsdManager.PROTOCOL_DNS_SD,
+                connect
+            )
+        } catch (error: Exception) {
+            updateStatus(token, "Connection discovery failed: ${error.message}")
+        }
     }
 
-    private fun createListener(pairing: Boolean) =
-        object : NsdManager.DiscoveryListener {
-            override fun onDiscoveryStarted(serviceType: String) {
-                updateStatus("Discovering pairing and ADB TLS endpoints")
-            }
-
-            override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
-                updateStatus("mDNS discovery failed (" + serviceType + ", code " + errorCode + ")")
-                runCatching { nsdManager.stopServiceDiscovery(this) }
-            }
-
-            override fun onDiscoveryStopped(serviceType: String) = Unit
-
-            override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
-                updateStatus("Could not stop mDNS discovery (" + errorCode + ")")
-            }
-
-            override fun onServiceFound(serviceInfo: NsdServiceInfo) {
-                resolve(serviceInfo, pairing)
-            }
-
-            override fun onServiceLost(serviceInfo: NsdServiceInfo) {
-                removeEndpoint(pairing, serviceInfo.serviceName)
-            }
+    private fun createListener(
+        pairing: Boolean,
+        token: Long
+    ) = object : NsdManager.DiscoveryListener {
+        override fun onDiscoveryStarted(serviceType: String) {
+            updateStatus(token, "Discovering pairing and ADB TLS endpoints")
         }
+
+        override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+            updateStatus(
+                token,
+                "mDNS discovery failed ($serviceType, code $errorCode)"
+            )
+            runCatching { nsdManager.stopServiceDiscovery(this) }
+        }
+
+        override fun onDiscoveryStopped(serviceType: String) = Unit
+
+        override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
+            updateStatus(token, "Could not stop mDNS discovery ($errorCode)")
+        }
+
+        override fun onServiceFound(serviceInfo: NsdServiceInfo) {
+            if (isCurrent(token)) resolve(serviceInfo, pairing, token)
+        }
+
+        override fun onServiceLost(serviceInfo: NsdServiceInfo) {
+            if (isCurrent(token)) removeEndpoint(pairing, serviceInfo.serviceName, token)
+        }
+    }
 
     @Suppress("DEPRECATION")
-    private fun resolve(serviceInfo: NsdServiceInfo, pairing: Boolean) {
-        nsdManager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
-            override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                updateStatus("Could not resolve " + serviceInfo.serviceName + " (" + errorCode + ")")
-            }
-
-            override fun onServiceResolved(resolved: NsdServiceInfo) {
-                val host = resolved.host?.hostAddress ?: return
-                val port = resolved.port
-                if (port !in 1..65535) return
-                val endpoint = AdbEndpoint(resolved.serviceName, host, port)
-                synchronized(lock) {
-                    endpoints[key(pairing, endpoint.name)] = endpoint
-                    publishStateLocked()
+    private fun resolve(
+        serviceInfo: NsdServiceInfo,
+        pairing: Boolean,
+        token: Long
+    ) {
+        try {
+            nsdManager.resolveService(serviceInfo, object : NsdManager.ResolveListener {
+                override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                    updateStatus(
+                        token,
+                        "Could not resolve ${serviceInfo.serviceName} ($errorCode)"
+                    )
                 }
-            }
-        })
+
+                override fun onServiceResolved(resolved: NsdServiceInfo) {
+                    val host = resolved.host?.hostAddress ?: return
+                    val port = resolved.port
+                    if (port !in 1..65535) return
+
+                    val endpoint = AdbEndpoint(resolved.serviceName, host, port)
+                    synchronized(lock) {
+                        if (!isCurrentLocked(token)) return
+                        endpoints[key(pairing, endpoint.name)] = endpoint
+                        publishStateLocked()
+                    }
+                }
+            })
+        } catch (error: Exception) {
+            updateStatus(token, "Could not resolve ${serviceInfo.serviceName}: ${error.message}")
+        }
     }
 
-    private fun removeEndpoint(pairing: Boolean, serviceName: String) {
+    private fun removeEndpoint(pairing: Boolean, serviceName: String, token: Long) {
         synchronized(lock) {
+            if (!isCurrentLocked(token)) return
             endpoints.remove(key(pairing, serviceName))
             publishStateLocked()
         }
@@ -108,8 +154,15 @@ class WirelessAdbDiscovery(context: Context) : Closeable {
     private fun key(pairing: Boolean, serviceName: String) =
         (if (pairing) "pair:" else "connect:") + serviceName
 
-    private fun updateStatus(status: String) {
+    private fun isCurrent(token: Long): Boolean =
+        synchronized(lock) { isCurrentLocked(token) }
+
+    private fun isCurrentLocked(token: Long): Boolean =
+        started && generation == token
+
+    private fun updateStatus(token: Long, status: String) {
         synchronized(lock) {
+            if (!isCurrentLocked(token)) return
             _state.value = _state.value.copy(status = status)
         }
     }
@@ -128,15 +181,19 @@ class WirelessAdbDiscovery(context: Context) : Closeable {
     }
 
     override fun close() {
-        synchronized(lock) {
+        val listeners = synchronized(lock) {
             if (!started) return
             started = false
-        }
-        runCatching { nsdManager.stopServiceDiscovery(pairingListener) }
-        runCatching { nsdManager.stopServiceDiscovery(connectListener) }
-        synchronized(lock) {
+            generation += 1
+            val active = listOfNotNull(pairingListener, connectListener)
+            pairingListener = null
+            connectListener = null
             endpoints.clear()
             _state.value = WirelessDiscoveryState(status = "Stopped")
+            active
+        }
+        listeners.forEach { listener ->
+            runCatching { nsdManager.stopServiceDiscovery(listener) }
         }
     }
 
