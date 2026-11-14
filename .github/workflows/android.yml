@@ -62,7 +62,7 @@ jobs:
           name: wdb-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90
 
   release:
     name: Publish signed GitHub Release
