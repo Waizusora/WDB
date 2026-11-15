@@ -135,7 +135,7 @@ class WirelessAdbManager(
 
     suspend fun execute(command: String): String = withContext(Dispatchers.IO) {
         require(command.isNotBlank()) { "Command must not be empty." }
-        val client = activeClient ?: throw IllegalStateException("No authenticated ADB transport.")
+        val client = requireClient()
         val result = client.shell(command)
         buildString {
             append(result.stdoutText)
@@ -295,14 +295,16 @@ class WirelessAdbManager(
         validatePort(localPort)
         validatePort(devicePort)
         requireClient().forward.add("tcp:$localPort", "tcp:$devicePort")
-        _portRules.value = (_portRules.value.filterNot { !it.reverse && it.sourcePort == localPort } + PortForwardRule(false, localPort, devicePort))
+        updatePortRules(client) { rules ->
+            rules.filterNot { !it.reverse && it.sourcePort == localPort } + PortForwardRule(false, localPort, devicePort)
+        }
         "Forward active: 127.0.0.1:$localPort → device:$devicePort"
     }
 
     suspend fun removeForward(localPort: Int): String = withContext(Dispatchers.IO) {
         validatePort(localPort)
         requireClient().forward.remove("tcp:$localPort")
-        _portRules.value = _portRules.value.filterNot { !it.reverse && it.sourcePort == localPort }
+        updatePortRules(client) { rules -> rules.filterNot { !it.reverse && it.sourcePort == localPort } }
         "Forward removed: 127.0.0.1:$localPort"
     }
 
@@ -310,14 +312,16 @@ class WirelessAdbManager(
         validatePort(devicePort)
         validatePort(hostPort)
         requireClient().reverse.add("tcp:$devicePort", "tcp:$hostPort")
-        _portRules.value = (_portRules.value.filterNot { it.reverse && it.sourcePort == devicePort } + PortForwardRule(true, devicePort, hostPort))
+        updatePortRules(client) { rules ->
+            rules.filterNot { it.reverse && it.sourcePort == devicePort } + PortForwardRule(true, devicePort, hostPort)
+        }
         "Reverse active: device:$devicePort → 127.0.0.1:$hostPort"
     }
 
     suspend fun removeReverse(devicePort: Int): String = withContext(Dispatchers.IO) {
         validatePort(devicePort)
         requireClient().reverse.remove("tcp:$devicePort")
-        _portRules.value = _portRules.value.filterNot { it.reverse && it.sourcePort == devicePort }
+        updatePortRules(client) { rules -> rules.filterNot { it.reverse && it.sourcePort == devicePort } }
         "Reverse removed: device:$devicePort"
     }
 
@@ -326,12 +330,29 @@ class WirelessAdbManager(
             ?: throw IllegalStateException("No authenticated ADB transport.")
     }
 
+    /**
+     * A command may finish after disconnect or reconnect. Only the client that is
+     * still active may publish connection-scoped state such as port-forward rules.
+     */
+    private inline fun updatePortRules(
+        client: AdbClient,
+        transform: (List<PortForwardRule>) -> List<PortForwardRule>
+    ) {
+        synchronized(connectionLock) {
+            if (activeClient === client && !client.isClosed) {
+                _portRules.value = transform(_portRules.value)
+            }
+        }
+    }
+
     private fun validatePort(port: Int) {
         require(port in 1..65535) { "TCP port must be between 1 and 65535." }
     }
 
     fun logcatFlow(): Flow<ShellChunk> {
-        val client = activeClient ?: throw IllegalStateException("No authenticated ADB transport.")
+        // Capture under the lifecycle lock so a concurrent disconnect cannot expose
+        // a partially published or already-detached client to a new stream.
+        val client = requireClient()
         return client.shellFlow("logcat -b all -v threadtime").flowOn(Dispatchers.IO)
     }
 
