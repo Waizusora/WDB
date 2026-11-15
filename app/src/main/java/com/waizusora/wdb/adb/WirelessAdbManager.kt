@@ -294,7 +294,8 @@ class WirelessAdbManager(
     suspend fun addForward(localPort: Int, devicePort: Int): String = withContext(Dispatchers.IO) {
         validatePort(localPort)
         validatePort(devicePort)
-        requireClient().forward.add("tcp:$localPort", "tcp:$devicePort")
+        val client = requireClient()
+        client.forward.add("tcp:$localPort", "tcp:$devicePort")
         updatePortRules(client) { rules ->
             rules.filterNot { !it.reverse && it.sourcePort == localPort } + PortForwardRule(false, localPort, devicePort)
         }
@@ -303,7 +304,8 @@ class WirelessAdbManager(
 
     suspend fun removeForward(localPort: Int): String = withContext(Dispatchers.IO) {
         validatePort(localPort)
-        requireClient().forward.remove("tcp:$localPort")
+        val client = requireClient()
+        client.forward.remove("tcp:$localPort")
         updatePortRules(client) { rules -> rules.filterNot { !it.reverse && it.sourcePort == localPort } }
         "Forward removed: 127.0.0.1:$localPort"
     }
@@ -311,7 +313,8 @@ class WirelessAdbManager(
     suspend fun addReverse(devicePort: Int, hostPort: Int): String = withContext(Dispatchers.IO) {
         validatePort(devicePort)
         validatePort(hostPort)
-        requireClient().reverse.add("tcp:$devicePort", "tcp:$hostPort")
+        val client = requireClient()
+        client.reverse.add("tcp:$devicePort", "tcp:$hostPort")
         updatePortRules(client) { rules ->
             rules.filterNot { it.reverse && it.sourcePort == devicePort } + PortForwardRule(true, devicePort, hostPort)
         }
@@ -320,7 +323,8 @@ class WirelessAdbManager(
 
     suspend fun removeReverse(devicePort: Int): String = withContext(Dispatchers.IO) {
         validatePort(devicePort)
-        requireClient().reverse.remove("tcp:$devicePort")
+        val client = requireClient()
+        client.reverse.remove("tcp:$devicePort")
         updatePortRules(client) { rules -> rules.filterNot { it.reverse && it.sourcePort == devicePort } }
         "Reverse removed: device:$devicePort"
     }
