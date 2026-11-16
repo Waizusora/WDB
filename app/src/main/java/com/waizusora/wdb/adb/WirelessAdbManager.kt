@@ -240,7 +240,7 @@ class WirelessAdbManager(
         withActiveClient(client) { active ->
             val result = active.shell("pm uninstall $packageName")
             if (!result.isSuccess || !result.stdoutText.trim().startsWith("Success")) {
-                throw IOException(result.stderrText.ifBlank { result.stdoutText }.ifBlank { "Package uninstall failed." })
+                throw IllegalStateException(result.stderrText.ifBlank { result.stdoutText }.ifBlank { "Package uninstall failed." })
             }
             result.stdoutText.trim()
         }
@@ -256,12 +256,22 @@ class WirelessAdbManager(
             val client = requireClient()
             withActiveClient(client) { active ->
                 var transferred = 0L
-                active.sync.push(stream, remotePath, onProgress = { transferred = it; onProgress(it) })
-                "Pushed $transferred bytes to $remotePath"
+                val temporaryPath = remotePath + ".wdb-" + java.util.UUID.randomUUID() + ".part"
+                try {
+                    active.sync.push(stream, temporaryPath, onProgress = { transferred = it; onProgress(it) })
+                    ensureClientActive(active)
+                    val move = active.shell("mv -f -- " + shellQuote(temporaryPath) + " " + shellQuote(remotePath))
+                    if (!move.isSuccess) {
+                        throw IllegalStateException(move.stderrText.ifBlank { move.stdoutText }.ifBlank { "Unable to finalize the uploaded file." })
+                    }
+                    "Pushed $transferred bytes to $remotePath"
+                } catch (error: Throwable) {
+                    runCatching { active.shell("rm -f -- " + shellQuote(temporaryPath)) }
+                    throw error
+                }
             }
         }
     }
-
     suspend fun pullFile(remotePath: String, destination: Uri, onProgress: (Long) -> Unit = {}): String = withContext(Dispatchers.IO) {
         require(remotePath.startsWith("/") && remotePath.none { it.code == 0 }) {
             "Remote source must be an absolute device path."
@@ -293,18 +303,26 @@ class WirelessAdbManager(
             .replace(Regex("[^A-Za-z0-9._-]"), "_")
             .takeUnless { it == "." || it == ".." }
             ?: "adb-download.bin"
-        val destination = directory.createFile("application/octet-stream", fileName)
-            ?: throw IOException("Unable to create a file in the selected transfer directory.")
+        val temporaryName = ".wdb-" + java.util.UUID.randomUUID() + ".part"
+        val destination = directory.createFile("application/octet-stream", temporaryName)
+            ?: throw IOException("Unable to create a temporary file in the selected transfer directory.")
         try {
             val output = appContext.contentResolver.openOutputStream(destination.uri, "wt")
-                ?: throw IOException("Unable to open the created destination file.")
+                ?: throw IOException("Unable to open the temporary destination file.")
             output.use { stream ->
-                var transferred = 0L
-                requireClient().sync.pull(remotePath, stream, onProgress = { transferred = it })
-                "Pulled $transferred bytes to ${destination.name ?: fileName}"
+                val client = requireClient()
+                withActiveClient(client) { active ->
+                    var transferred = 0L
+                    active.sync.pull(remotePath, stream, onProgress = { transferred = it; onProgress(it) })
+                    ensureClientActive(active)
+                    if (!destination.renameTo(fileName)) {
+                        throw IllegalStateException("Transfer completed, but the temporary file could not be renamed to $fileName.")
+                    }
+                    "Pulled $transferred bytes to $fileName"
+                }
             }
         } catch (error: Throwable) {
-            // Delete partial SAF output on I/O failure or coroutine cancellation.
+            // A failed or cancelled transfer never remains under its final filename.
             runCatching { destination.delete() }
             throw error
         }
@@ -394,6 +412,16 @@ class WirelessAdbManager(
         }
         if (retired) runCatching { client.close() }
     }
+
+    private fun ensureClientActive(client: AdbClient) {
+        synchronized(connectionLock) {
+            if (activeClient !== client || client.isClosed) {
+                throw CancellationException("ADB operation was superseded by a connection lifecycle change.")
+            }
+        }
+    }
+
+    private fun shellQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
 
     private fun requireClient(): AdbClient = synchronized(connectionLock) {
         activeClient?.takeIf { !it.isClosed }
