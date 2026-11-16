@@ -193,7 +193,6 @@ class WirelessAdbManager(
             } finally { descriptors.forEach { runCatching { it.close() } } }
         }
         }
-        }
     }
 
     private fun displayName(uri: Uri?): String? {
@@ -309,18 +308,19 @@ class WirelessAdbManager(
         try {
             val output = appContext.contentResolver.openOutputStream(destination.uri, "wt")
                 ?: throw IOException("Unable to open the temporary destination file.")
+            val client = requireClient()
+            var transferred = 0L
             output.use { stream ->
-                val client = requireClient()
                 withActiveClient(client) { active ->
-                    var transferred = 0L
-                    active.sync.pull(remotePath, stream, onProgress = { transferred = it; onProgress(it) })
-                    ensureClientActive(active)
-                    if (!destination.renameTo(fileName)) {
-                        throw IllegalStateException("Transfer completed, but the temporary file could not be renamed to $fileName.")
-                    }
-                    "Pulled $transferred bytes to $fileName"
+                    active.sync.pull(remotePath, stream, onProgress = { transferred = it; ensureClientActive(active); onProgress(it) })
                 }
             }
+            // Publish the final name only after the stream has closed successfully.
+            ensureClientActive(client)
+            if (!destination.renameTo(fileName)) {
+                throw IllegalStateException("Transfer completed, but the temporary file could not be renamed to $fileName.")
+            }
+            "Pulled $transferred bytes to $fileName"
         } catch (error: Throwable) {
             // A failed or cancelled transfer never remains under its final filename.
             runCatching { destination.delete() }
