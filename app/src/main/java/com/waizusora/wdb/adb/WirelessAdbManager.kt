@@ -160,8 +160,7 @@ class WirelessAdbManager(
     suspend fun installApks(uris: List<Uri>, onProgress: (String) -> Unit = {}): String = withContext(Dispatchers.IO) {
         require(uris.isNotEmpty()) { "Select at least one APK file." }
         val client = requireClient()
-        withActiveClient(client) { _ ->
-        withActiveClient(client) { _ ->
+        withActiveClient(client) { active ->
         val selectedName = displayName(uris.singleOrNull())
         val archiveUri = uris.singleOrNull()?.takeIf { selectedName?.substringAfterLast(".", "")?.lowercase() in setOf("apks", "xapk", "apkm", "zip") }
         if (archiveUri != null) {
@@ -171,6 +170,7 @@ class WirelessAdbManager(
                 var latest = "Preparing split APK installation…"
                 client.install.installMultiple(sources, flags = listOf("-r")).collect { progress ->
                     latest = "${progress.statusText} (${progress.percentage.toInt()}%)"
+                    ensureClientActive(active)
                     onProgress(latest)
                 }
                 latest
@@ -188,7 +188,7 @@ class WirelessAdbManager(
                 }.sortedBy { if (it.first.contains("base", ignoreCase = true)) 0 else 1 }
                 var latest = "Preparing APK installation…"
                 val flow = if (sources.size == 1) client.install.install(sources.single().second, flags = listOf("-r")) else client.install.installMultiple(sources, flags = listOf("-r"))
-                flow.collect { progress -> latest = "${progress.statusText} (${progress.percentage.toInt()}%)"; onProgress(latest) }
+                flow.collect { progress -> latest = "${progress.statusText} (${progress.percentage.toInt()}%)"; ensureClientActive(active); onProgress(latest) }
                 latest
             } finally { descriptors.forEach { runCatching { it.close() } } }
         }
@@ -258,7 +258,7 @@ class WirelessAdbManager(
                 var transferred = 0L
                 val temporaryPath = remotePath + ".wdb-" + java.util.UUID.randomUUID() + ".part"
                 try {
-                    active.sync.push(stream, temporaryPath, onProgress = { transferred = it; onProgress(it) })
+                    active.sync.push(stream, temporaryPath, onProgress = { transferred = it; ensureClientActive(active); onProgress(it) })
                     ensureClientActive(active)
                     val move = active.shell("mv -f -- " + shellQuote(temporaryPath) + " " + shellQuote(remotePath))
                     if (!move.isSuccess) {
@@ -283,7 +283,7 @@ class WirelessAdbManager(
                 val client = requireClient()
                 withActiveClient(client) { active ->
                     var transferred = 0L
-                    active.sync.pull(remotePath, stream, onProgress = { transferred = it; onProgress(it) })
+                    active.sync.pull(remotePath, stream, onProgress = { transferred = it; ensureClientActive(active); onProgress(it) })
                     "Pulled $transferred bytes from $remotePath"
                 }
             }
