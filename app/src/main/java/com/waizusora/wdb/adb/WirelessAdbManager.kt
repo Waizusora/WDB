@@ -15,6 +15,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.CancellationException
 import java.io.Closeable
 import java.net.InetAddress
 import java.net.NetworkInterface
@@ -327,6 +330,46 @@ class WirelessAdbManager(
         client.reverse.remove("tcp:$devicePort")
         updatePortRules(client) { rules -> rules.filterNot { it.reverse && it.sourcePort == devicePort } }
         "Reverse removed: device:$devicePort"
+    }
+
+    /**
+     * Runs an operation against the exact client captured at its start. Late
+     * completions cannot be reported as successful after disconnect/reconnect.
+     * Cancellation or transport I/O failure retires only that client identity.
+     */
+    private suspend fun <T> withActiveClient(
+        client: AdbClient,
+        operation: suspend (AdbClient) -> T
+    ): T {
+        try {
+            val result = operation(client)
+            currentCoroutineContext().ensureActive()
+            synchronized(connectionLock) {
+                if (activeClient !== client || client.isClosed) {
+                    throw CancellationException("ADB operation was superseded by a connection lifecycle change.")
+                }
+            }
+            return result
+        } catch (error: Throwable) {
+            if (error is CancellationException || error is IOException || client.isClosed) {
+                retireClient(client)
+            }
+            throw error
+        }
+    }
+
+    private fun retireClient(client: AdbClient) {
+        val retired = synchronized(connectionLock) {
+            if (activeClient === client) {
+                activeClient = null
+                _connectedModel.value = null
+                _portRules.value = emptyList()
+                true
+            } else {
+                false
+            }
+        }
+        if (retired) runCatching { client.close() }
     }
 
     private fun requireClient(): AdbClient = synchronized(connectionLock) {
