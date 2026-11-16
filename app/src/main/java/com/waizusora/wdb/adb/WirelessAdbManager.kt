@@ -13,11 +13,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import java.io.Closeable
 import java.net.InetAddress
 import java.net.NetworkInterface
@@ -451,9 +454,14 @@ class WirelessAdbManager(
         // Capture under the lifecycle lock so a concurrent disconnect cannot expose
         // a partially published or already-detached client to a new stream.
         val client = requireClient()
-        return client.shellFlow("logcat -b all -v threadtime").flowOn(Dispatchers.IO)
+        return client.shellFlow("logcat -b all -v threadtime")
+            .onEach { ensureClientActive(client) }
+            .catch { error ->
+                if (error is IOException) retireClient(client)
+                throw error
+            }
+            .flowOn(Dispatchers.IO)
     }
-
     suspend fun disconnect() {
         // Invalidate in-flight TLS handshakes before dispatching socket teardown.
         val client = synchronized(connectionLock) {
@@ -464,7 +472,7 @@ class WirelessAdbManager(
                 _portRules.value = emptyList()
             }
         }
-        withContext(Dispatchers.IO) {
+        withContext(NonCancellable + Dispatchers.IO) {
             runCatching { client?.close() }
         }
     }
