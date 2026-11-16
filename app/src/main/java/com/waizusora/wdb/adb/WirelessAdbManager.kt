@@ -139,17 +139,19 @@ class WirelessAdbManager(
     suspend fun execute(command: String): String = withContext(Dispatchers.IO) {
         require(command.isNotBlank()) { "Command must not be empty." }
         val client = requireClient()
-        val result = client.shell(command)
-        buildString {
-            append(result.stdoutText)
-            if (result.stderrText.isNotBlank()) {
-                append("\n[stderr]\n")
-                append(result.stderrText)
-            }
-            if (!result.isSuccess) {
-                append("\n[exit code ")
-                append(result.exitCode)
-                append(']')
+        withActiveClient(client) { active ->
+            val result = active.shell(command)
+            buildString {
+                append(result.stdoutText)
+                if (result.stderrText.isNotBlank()) {
+                    append("\n[stderr]\n")
+                    append(result.stderrText)
+                }
+                if (!result.isSuccess) {
+                    append("\n[exit code ")
+                    append(result.exitCode)
+                    append(']')
+                }
             }
         }
     }
@@ -158,6 +160,8 @@ class WirelessAdbManager(
     suspend fun installApks(uris: List<Uri>, onProgress: (String) -> Unit = {}): String = withContext(Dispatchers.IO) {
         require(uris.isNotEmpty()) { "Select at least one APK file." }
         val client = requireClient()
+        withActiveClient(client) { _ ->
+        withActiveClient(client) { _ ->
         val selectedName = displayName(uris.singleOrNull())
         val archiveUri = uris.singleOrNull()?.takeIf { selectedName?.substringAfterLast(".", "")?.lowercase() in setOf("apks", "xapk", "apkm", "zip") }
         if (archiveUri != null) {
@@ -187,6 +191,8 @@ class WirelessAdbManager(
                 flow.collect { progress -> latest = "${progress.statusText} (${progress.percentage.toInt()}%)"; onProgress(latest) }
                 latest
             } finally { descriptors.forEach { runCatching { it.close() } } }
+        }
+        }
         }
     }
 
@@ -230,11 +236,14 @@ class WirelessAdbManager(
         require(packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))) {
             "Enter a valid Android package name."
         }
-        val result = requireClient().shell("pm uninstall $packageName")
-        if (!result.isSuccess || !result.stdoutText.trim().startsWith("Success")) {
-            throw IOException(result.stderrText.ifBlank { result.stdoutText }.ifBlank { "Package uninstall failed." })
+        val client = requireClient()
+        withActiveClient(client) { active ->
+            val result = active.shell("pm uninstall $packageName")
+            if (!result.isSuccess || !result.stdoutText.trim().startsWith("Success")) {
+                throw IOException(result.stderrText.ifBlank { result.stdoutText }.ifBlank { "Package uninstall failed." })
+            }
+            result.stdoutText.trim()
         }
-        result.stdoutText.trim()
     }
 
     suspend fun pushFile(uri: Uri, remotePath: String, onProgress: (Long) -> Unit = {}): String = withContext(Dispatchers.IO) {
@@ -244,9 +253,12 @@ class WirelessAdbManager(
         val input = appContext.contentResolver.openInputStream(uri)
             ?: throw IOException("Unable to open the selected source file.")
         input.use { stream ->
-            var transferred = 0L
-            requireClient().sync.push(stream, remotePath, onProgress = { transferred = it; onProgress(it) })
-            "Pushed $transferred bytes to $remotePath"
+            val client = requireClient()
+            withActiveClient(client) { active ->
+                var transferred = 0L
+                active.sync.push(stream, remotePath, onProgress = { transferred = it; onProgress(it) })
+                "Pushed $transferred bytes to $remotePath"
+            }
         }
     }
 
@@ -258,9 +270,12 @@ class WirelessAdbManager(
             val output = appContext.contentResolver.openOutputStream(destination, "wt")
                 ?: throw IOException("Unable to open the selected destination.")
             output.use { stream ->
-                var transferred = 0L
-                requireClient().sync.pull(remotePath, stream, onProgress = { transferred = it; onProgress(it) })
-                "Pulled $transferred bytes from $remotePath"
+                val client = requireClient()
+                withActiveClient(client) { active ->
+                    var transferred = 0L
+                    active.sync.pull(remotePath, stream, onProgress = { transferred = it; onProgress(it) })
+                    "Pulled $transferred bytes from $remotePath"
+                }
             }
         } catch (error: Throwable) {
             // A cancelled or failed sync must not leave a truncated file that looks complete.
@@ -298,38 +313,46 @@ class WirelessAdbManager(
         validatePort(localPort)
         validatePort(devicePort)
         val client = requireClient()
-        client.forward.add("tcp:$localPort", "tcp:$devicePort")
-        updatePortRules(client) { rules ->
-            rules.filterNot { !it.reverse && it.sourcePort == localPort } + PortForwardRule(false, localPort, devicePort)
+        withActiveClient(client) { active ->
+            active.forward.add("tcp:$localPort", "tcp:$devicePort")
+            updatePortRules(active) { rules ->
+                rules.filterNot { !it.reverse && it.sourcePort == localPort } + PortForwardRule(false, localPort, devicePort)
+            }
+            "Forward active: 127.0.0.1:$localPort → device:$devicePort"
         }
-        "Forward active: 127.0.0.1:$localPort → device:$devicePort"
     }
 
     suspend fun removeForward(localPort: Int): String = withContext(Dispatchers.IO) {
         validatePort(localPort)
         val client = requireClient()
-        client.forward.remove("tcp:$localPort")
-        updatePortRules(client) { rules -> rules.filterNot { !it.reverse && it.sourcePort == localPort } }
-        "Forward removed: 127.0.0.1:$localPort"
+        withActiveClient(client) { active ->
+            active.forward.remove("tcp:$localPort")
+            updatePortRules(active) { rules -> rules.filterNot { !it.reverse && it.sourcePort == localPort } }
+            "Forward removed: 127.0.0.1:$localPort"
+        }
     }
 
     suspend fun addReverse(devicePort: Int, hostPort: Int): String = withContext(Dispatchers.IO) {
         validatePort(devicePort)
         validatePort(hostPort)
         val client = requireClient()
-        client.reverse.add("tcp:$devicePort", "tcp:$hostPort")
-        updatePortRules(client) { rules ->
-            rules.filterNot { it.reverse && it.sourcePort == devicePort } + PortForwardRule(true, devicePort, hostPort)
+        withActiveClient(client) { active ->
+            active.reverse.add("tcp:$devicePort", "tcp:$hostPort")
+            updatePortRules(active) { rules ->
+                rules.filterNot { it.reverse && it.sourcePort == devicePort } + PortForwardRule(true, devicePort, hostPort)
+            }
+            "Reverse active: device:$devicePort → 127.0.0.1:$hostPort"
         }
-        "Reverse active: device:$devicePort → 127.0.0.1:$hostPort"
     }
 
     suspend fun removeReverse(devicePort: Int): String = withContext(Dispatchers.IO) {
         validatePort(devicePort)
         val client = requireClient()
-        client.reverse.remove("tcp:$devicePort")
-        updatePortRules(client) { rules -> rules.filterNot { it.reverse && it.sourcePort == devicePort } }
-        "Reverse removed: device:$devicePort"
+        withActiveClient(client) { active ->
+            active.reverse.remove("tcp:$devicePort")
+            updatePortRules(active) { rules -> rules.filterNot { it.reverse && it.sourcePort == devicePort } }
+            "Reverse removed: device:$devicePort"
+        }
     }
 
     /**
