@@ -505,9 +505,24 @@ class WirelessAdbManager(
         validatePort(hostPort)
         val client = requireClient()
         withActiveClient(client) { active ->
-            active.reverse.add("tcp:$devicePort", "tcp:$hostPort")
-            updatePortRules(active) { rules ->
-                rules.filterNot { it.reverse && it.sourcePort == devicePort } + PortForwardRule(true, devicePort, hostPort)
+            withContext(NonCancellable) {
+                try {
+                    ensureClientActive(active)
+                    active.reverse.add("tcp:$devicePort", "tcp:$hostPort")
+                    ensureClientActive(active)
+                } catch (error: CancellationException) {
+                    // A reconnect can close the reverse manager while add() is binding.
+                    // Remove a mapping that may have been published after close().
+                    try {
+                        active.reverse.remove("tcp:$devicePort")
+                    } catch (_: Throwable) {
+                        // The old transport may already be closed; socket teardown is best effort.
+                    }
+                    throw error
+                }
+                updatePortRules(active) { rules ->
+                    rules.filterNot { it.reverse && it.sourcePort == devicePort } + PortForwardRule(true, devicePort, hostPort)
+                }
             }
             "Reverse active: device:$devicePort → 127.0.0.1:$hostPort"
         }
@@ -517,8 +532,11 @@ class WirelessAdbManager(
         validatePort(devicePort)
         val client = requireClient()
         withActiveClient(client) { active ->
-            active.reverse.remove("tcp:$devicePort")
-            updatePortRules(active) { rules -> rules.filterNot { it.reverse && it.sourcePort == devicePort } }
+            withContext(NonCancellable) {
+                ensureClientActive(active)
+                active.reverse.remove("tcp:$devicePort")
+                updatePortRules(active) { rules -> rules.filterNot { it.reverse && it.sourcePort == devicePort } }
+            }
             "Reverse removed: device:$devicePort"
         }
     }
