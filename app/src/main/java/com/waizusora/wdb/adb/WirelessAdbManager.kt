@@ -400,9 +400,20 @@ class WirelessAdbManager(
         validatePort(devicePort)
         val client = requireClient()
         withActiveClient(client) { active ->
-            active.forward.add("tcp:$localPort", "tcp:$devicePort")
-            updatePortRules(active) { rules ->
-                rules.filterNot { !it.reverse && it.sourcePort == localPort } + PortForwardRule(false, localPort, devicePort)
+            withContext(NonCancellable) {
+                try {
+                    ensureClientActive(active)
+                    active.forward.add("tcp:$localPort", "tcp:$devicePort")
+                    ensureClientActive(active)
+                } catch (error: CancellationException) {
+                    // A reconnect can close the forward manager while add() is binding.
+                    // Remove any listener that may have been published after close().
+                    runCatching { active.forward.remove("tcp:$localPort") }
+                    throw error
+                }
+                updatePortRules(active) { rules ->
+                    rules.filterNot { !it.reverse && it.sourcePort == localPort } + PortForwardRule(false, localPort, devicePort)
+                }
             }
             "Forward active: 127.0.0.1:$localPort → device:$devicePort"
         }
@@ -412,8 +423,11 @@ class WirelessAdbManager(
         validatePort(localPort)
         val client = requireClient()
         withActiveClient(client) { active ->
-            active.forward.remove("tcp:$localPort")
-            updatePortRules(active) { rules -> rules.filterNot { !it.reverse && it.sourcePort == localPort } }
+            withContext(NonCancellable) {
+                ensureClientActive(active)
+                active.forward.remove("tcp:$localPort")
+                updatePortRules(active) { rules -> rules.filterNot { !it.reverse && it.sourcePort == localPort } }
+            }
             "Forward removed: 127.0.0.1:$localPort"
         }
     }
