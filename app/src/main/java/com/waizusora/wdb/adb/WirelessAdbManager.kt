@@ -286,8 +286,8 @@ class WirelessAdbManager(
     }
 
     suspend fun pushFile(uri: Uri, remotePath: String, onProgress: (Long) -> Unit = {}): String = withContext(Dispatchers.IO) {
-        require(remotePath.startsWith("/") && remotePath.none { it.code == 0 }) {
-            "Remote destination must be an absolute device path."
+        require(remotePath.startsWith("/") && remotePath.none { it.code == 0 } && ',' !in remotePath) {
+            "Remote destination must be an absolute path without commas."
         }
         val input = appContext.contentResolver.openInputStream(uri)
             ?: throw IOException("Unable to open the selected source file.")
@@ -330,7 +330,9 @@ class WirelessAdbManager(
             }
         } catch (error: Throwable) {
             // A cancelled or failed sync must not leave a truncated file that looks complete.
-            runCatching { DocumentsContract.deleteDocument(appContext.contentResolver, destination) }
+            if (destinationOpened) {
+                runCatching { DocumentsContract.deleteDocument(appContext.contentResolver, destination) }
+            }
             throw error
         }
     }

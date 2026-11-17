@@ -9,6 +9,15 @@ import org.junit.Test
 
 class AdbOperationFailurePolicyTest {
     @Test
+    fun acceptsOnlyCompleteRemoteFileTransfers() {
+        assertTrue(isCompleteRemoteFileTransfer(0L, 0L))
+        assertTrue(isCompleteRemoteFileTransfer(1024L, 1024L))
+        assertFalse(isCompleteRemoteFileTransfer(1024L, 1023L))
+        assertFalse(isCompleteRemoteFileTransfer(1024L, 1025L))
+        assertFalse(isCompleteRemoteFileTransfer(-1L, 0L))
+    }
+
+    @Test
     fun callerCancellationDoesNotRetireSharedTransport() {
         assertFalse(shouldRetireAdbClient(CancellationException("caller cancelled"), clientClosed = false))
         assertFalse(shouldRetireAdbClient(CancellationException("disconnect"), clientClosed = true))
