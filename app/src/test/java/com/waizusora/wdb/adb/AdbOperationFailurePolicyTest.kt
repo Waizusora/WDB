@@ -20,7 +20,7 @@ class AdbOperationFailurePolicyTest {
     @Test
     fun callerCancellationDoesNotRetireSharedTransport() {
         assertFalse(shouldRetireAdbClient(CancellationException("caller cancelled"), clientClosed = false))
-        assertFalse(shouldRetireAdbClient(CancellationException("disconnect"), clientClosed = true))
+        assertTrue(shouldRetireAdbClient(CancellationException("disconnect"), clientClosed = true))
     }
 
     @Test

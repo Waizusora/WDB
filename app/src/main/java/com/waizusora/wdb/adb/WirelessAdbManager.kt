@@ -652,9 +652,11 @@ class WirelessAdbManager(
  * failures are also operation failures, not proof that the ADB transport is dead.
  */
 internal fun shouldRetireAdbClient(error: Throwable, clientClosed: Boolean): Boolean {
+    // A caller cancellation must not retire a healthy shared client. A client that
+    // is already closed, however, must be detached even if cancellation raced with it.
+    if (clientClosed) return true
     if (error is CancellationException) return false
-    return clientClosed ||
-        error is AdbException.Io ||
+    return error is AdbException.Io ||
         error is AdbException.Transport ||
         error is AdbException.StreamClosed
 }
