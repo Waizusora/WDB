@@ -47,8 +47,7 @@ class WirelessAdbManager(
     private val discovery = WirelessAdbDiscovery(appContext)
     val discoveryState = discovery.state
 
-    @Volatile
-    private var activeClient: AdbClient? = null
+    private val clientRegistry = ActiveClientRegistry<AdbClient>()
 
     /**
      * Serializes connection publication and teardown without holding the lock during
@@ -126,8 +125,7 @@ class WirelessAdbManager(
                 check(!managerClosed && connectionGeneration == attemptGeneration) {
                     "ADB connection attempt was superseded by a newer lifecycle operation."
                 }
-                activeClient.also {
-                    activeClient = candidate
+                clientRegistry.replace(candidate).also {
                     _connectedModel.value = model
                     _portRules.value = emptyList()
                 }
@@ -453,7 +451,7 @@ class WirelessAdbManager(
             val result = operation(client)
             currentCoroutineContext().ensureActive()
             synchronized(connectionLock) {
-                if (activeClient !== client || client.isClosed) {
+                if (!clientRegistry.isCurrent(client) || client.isClosed) {
                     throw CancellationException("ADB operation was superseded by a connection lifecycle change.")
                 }
             }
@@ -468,8 +466,7 @@ class WirelessAdbManager(
 
     private fun retireClient(client: AdbClient) {
         val retired = synchronized(connectionLock) {
-            if (activeClient === client) {
-                activeClient = null
+            if (clientRegistry.clearIfCurrent(client)) {
                 _connectedModel.value = null
                 _portRules.value = emptyList()
                 true
@@ -482,7 +479,7 @@ class WirelessAdbManager(
 
     private fun ensureClientActive(client: AdbClient) {
         synchronized(connectionLock) {
-            if (activeClient !== client || client.isClosed) {
+            if (!clientRegistry.isCurrent(client) || client.isClosed) {
                 throw CancellationException("ADB operation was superseded by a connection lifecycle change.")
             }
         }
@@ -491,7 +488,7 @@ class WirelessAdbManager(
     private fun shellQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"
 
     private fun requireClient(): AdbClient = synchronized(connectionLock) {
-        activeClient?.takeIf { !it.isClosed }
+        clientRegistry.current()?.takeIf { !it.isClosed }
             ?: throw IllegalStateException("No authenticated ADB transport.")
     }
 
@@ -504,7 +501,7 @@ class WirelessAdbManager(
         transform: (List<PortForwardRule>) -> List<PortForwardRule>
     ) {
         synchronized(connectionLock) {
-            if (activeClient === client && !client.isClosed) {
+            if (clientRegistry.isCurrent(client) && !client.isClosed) {
                 _portRules.value = transform(_portRules.value)
             }
         }
@@ -530,8 +527,7 @@ class WirelessAdbManager(
         // Invalidate in-flight TLS handshakes before dispatching socket teardown.
         val client = synchronized(connectionLock) {
             ++connectionGeneration
-            activeClient.also {
-                activeClient = null
+            clientRegistry.clear().also {
                 _connectedModel.value = null
                 _portRules.value = emptyList()
             }
@@ -542,9 +538,9 @@ class WirelessAdbManager(
     }
 
     fun isConnected(): Boolean = synchronized(connectionLock) {
-        val connected = activeClient?.isClosed == false
+        val connected = clientRegistry.current()?.isClosed == false
         if (!connected) {
-            activeClient = null
+            clientRegistry.clear()
             _connectedModel.value = null
             _portRules.value = emptyList()
         }
@@ -555,8 +551,7 @@ class WirelessAdbManager(
         val client = synchronized(connectionLock) {
             managerClosed = true
             ++connectionGeneration
-            activeClient.also {
-                activeClient = null
+            clientRegistry.clear().also {
                 _connectedModel.value = null
                 _portRules.value = emptyList()
             }
