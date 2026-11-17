@@ -338,7 +338,7 @@ class WirelessAdbManager(
                 }
                 ensureClientActive(active)
                 if (!isCompleteRemoteFileTransfer(remoteStat.size, transferred)) {
-                    throw IOException("Incomplete ADB download: received $transferred of \${remoteStat.size} bytes.")
+                    throw IOException("Incomplete ADB download: received $transferred of ${remoteStat.size} bytes.")
                 }
                 "Pulled $transferred bytes from $remotePath"
             }
