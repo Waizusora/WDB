@@ -173,7 +173,7 @@ class WirelessAdbManager(
                 val sources = extracted.map { file -> file.name to RandomAccessSource.of(file) }
                 var latest = "Preparing split APK installation…"
                 client.install.installMultiple(sources, flags = listOf("-r")).collect { progress ->
-                    latest = "\${progress.statusText} (\${progress.percentage.toInt()}%)"
+                    latest = "${progress.statusText} (${progress.percentage.toInt()}%)"
                     ensureClientActive(active)
                     onProgress(latest)
                 }
@@ -242,7 +242,7 @@ class WirelessAdbManager(
                             val safeName = name.substringAfterLast("/")
                                 .replace(Regex("[^A-Za-z0-9._-]"), "_")
                                 .ifBlank { "split.apk" }
-                            val target = File(directory, "\${extracted.size}_$safeName")
+                            val target = File(directory, "${extracted.size}_$safeName")
                             target.outputStream().buffered().use { output ->
                                 val buffer = ByteArray(64 * 1024)
                                 while (true) {
