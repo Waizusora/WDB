@@ -7,6 +7,7 @@ import androidx.documentfile.provider.DocumentFile
 import io.github.rhythmcache.adb.io.RandomAccessSource
 import kotlinx.coroutines.flow.collect
 import io.github.rhythmcache.adb.AdbClient
+import io.github.rhythmcache.adb.AdbException
 import io.github.rhythmcache.adb.AdbKeyProvider
 import io.github.rhythmcache.adb.ShellChunk
 import kotlinx.coroutines.Dispatchers
@@ -172,12 +173,18 @@ class WirelessAdbManager(
                 val sources = extracted.map { file -> file.name to RandomAccessSource.of(file) }
                 var latest = "Preparing split APK installation…"
                 client.install.installMultiple(sources, flags = listOf("-r")).collect { progress ->
-                    latest = "${progress.statusText} (${progress.percentage.toInt()}%)"
+                    latest = "\${progress.statusText} (\${progress.percentage.toInt()}%)"
                     ensureClientActive(active)
                     onProgress(latest)
                 }
                 latest
-            } finally { extracted.forEach { runCatching { it.delete() } } }
+            } finally {
+                extracted.firstOrNull()?.parentFile?.let { directory ->
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        runCatching { directory.deleteRecursively() }
+                    }
+                }
+            }
         } else {
             val descriptors = mutableListOf<android.os.ParcelFileDescriptor>()
             try {
@@ -206,33 +213,63 @@ class WirelessAdbManager(
         return uri.lastPathSegment
     }
 
-    private fun extractSplitApks(uri: Uri): List<File> {
-        val directory = File(appContext.cacheDir, "wdb-split-apks")
-        directory.mkdirs()
-        directory.listFiles()?.forEach { it.delete() }
+    private suspend fun extractSplitApks(uri: Uri): List<File> {
+        val root = File(appContext.cacheDir, "wdb-split-apks")
+        if (!root.exists() && !root.mkdirs()) {
+            throw IOException("Unable to create the APK extraction cache.")
+        }
+        val directory = File(root, java.util.UUID.randomUUID().toString())
+        if (!directory.mkdir()) throw IOException("Unable to create a private APK extraction directory.")
+
         val extracted = mutableListOf<File>()
         var totalBytes = 0L
-        val input = appContext.contentResolver.openInputStream(uri) ?: throw IOException("Unable to open the split APK archive.")
-        input.use { raw -> ZipInputStream(raw).use { zip ->
-            while (true) {
-                val entry = zip.nextEntry ?: break
-                val name = entry.name
-                val lower = name.lowercase()
-                if (!entry.isDirectory && lower.endsWith(".apk") && !lower.startsWith("standalones/") && !lower.contains("/standalones/")) {
-                    if (extracted.size >= 32) throw IOException("Split archive contains more than 32 APK files.")
-                    val safeName = name.substringAfterLast("/").replace(Regex("[^A-Za-z0-9._-]"), "_")
-                    val target = File(directory, "${extracted.size}_$safeName")
-                    target.outputStream().buffered().use { output ->
-                        val buffer = ByteArray(64 * 1024)
-                        while (true) { val count = zip.read(buffer); if (count < 0) break; totalBytes += count; if (totalBytes > 1_500_000_000L) throw IOException("Split APK archive exceeds the 1.5 GB safety limit."); output.write(buffer, 0, count) }
+        try {
+            val input = appContext.contentResolver.openInputStream(uri)
+                ?: throw IOException("Unable to open the split APK archive.")
+            input.use { raw ->
+                ZipInputStream(raw).use { zip ->
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        val entry = zip.nextEntry ?: break
+                        val name = entry.name
+                        val lower = name.lowercase()
+                        if (!entry.isDirectory && lower.endsWith(".apk") &&
+                            !lower.startsWith("standalones/") && !lower.contains("/standalones/")
+                        ) {
+                            if (extracted.size >= 32) {
+                                throw IOException("Split archive contains more than 32 APK files.")
+                            }
+                            val safeName = name.substringAfterLast("/")
+                                .replace(Regex("[^A-Za-z0-9._-]"), "_")
+                                .ifBlank { "split.apk" }
+                            val target = File(directory, "\${extracted.size}_$safeName")
+                            target.outputStream().buffered().use { output ->
+                                val buffer = ByteArray(64 * 1024)
+                                while (true) {
+                                    currentCoroutineContext().ensureActive()
+                                    val count = zip.read(buffer)
+                                    if (count < 0) break
+                                    totalBytes += count
+                                    if (totalBytes > 1_500_000_000L) {
+                                        throw IOException("Split APK archive exceeds the 1.5 GB safety limit.")
+                                    }
+                                    output.write(buffer, 0, count)
+                                }
+                            }
+                            if (target.length() > 0L) extracted += target else target.delete()
+                        }
+                        zip.closeEntry()
                     }
-                    if (target.length() > 0) extracted += target else target.delete()
                 }
-                zip.closeEntry()
             }
-        } }
-        if (extracted.isEmpty()) throw IOException("No installable APK files were found in the selected archive.")
-        return extracted.sortedBy { if (it.name.contains("base", ignoreCase = true)) 0 else 1 }
+            if (extracted.isEmpty()) throw IOException("No installable APK files were found in the selected archive.")
+            return extracted.sortedBy { if (it.name.contains("base", ignoreCase = true)) 0 else 1 }
+        } catch (error: Throwable) {
+            withContext(NonCancellable + Dispatchers.IO) {
+                runCatching { directory.deleteRecursively() }
+            }
+            throw error
+        }
     }
     suspend fun uninstallPackage(packageName: String): String = withContext(Dispatchers.IO) {
         require(packageName.matches(Regex("[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)+"))) {
@@ -268,7 +305,9 @@ class WirelessAdbManager(
                     }
                     "Pushed $transferred bytes to $remotePath"
                 } catch (error: Throwable) {
-                    runCatching { active.shell("rm -f -- " + shellQuote(temporaryPath)) }
+                    withContext(NonCancellable + Dispatchers.IO) {
+                        runCatching { active.shell("rm -f -- " + shellQuote(temporaryPath)) }
+                    }
                     throw error
                 }
             }
@@ -395,7 +434,7 @@ class WirelessAdbManager(
             }
             return result
         } catch (error: Throwable) {
-            if (error is CancellationException || error is IOException || client.isClosed) {
+            if (shouldRetireAdbClient(error, client.isClosed)) {
                 retireClient(client)
             }
             throw error
@@ -457,7 +496,7 @@ class WirelessAdbManager(
         return client.shellFlow("logcat -b all -v threadtime")
             .onEach { ensureClientActive(client) }
             .catch { error ->
-                if (error is IOException) retireClient(client)
+                if (shouldRetireAdbClient(error, client.isClosed)) retireClient(client)
                 throw error
             }
             .flowOn(Dispatchers.IO)
@@ -505,4 +544,18 @@ class WirelessAdbManager(
     private companion object {
         const val CONNECT_TIMEOUT_MS = 30_000L
     }
+}
+
+
+/**
+ * Cancellation belongs to the caller and must not tear down an application-scoped
+ * transport shared by other operations. Local IOException and remote command/protocol
+ * failures are also operation failures, not proof that the ADB transport is dead.
+ */
+internal fun shouldRetireAdbClient(error: Throwable, clientClosed: Boolean): Boolean {
+    if (error is CancellationException) return false
+    return clientClosed ||
+        error is AdbException.Io ||
+        error is AdbException.Transport ||
+        error is AdbException.StreamClosed
 }
