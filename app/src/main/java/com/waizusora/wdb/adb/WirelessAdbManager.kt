@@ -27,6 +27,7 @@ import java.net.InetAddress
 import java.net.NetworkInterface
 import java.util.Collections
 import java.io.IOException
+import java.io.FileNotFoundException
 import java.io.File
 import java.util.zip.ZipInputStream
 
@@ -318,36 +319,89 @@ class WirelessAdbManager(
         require(remotePath.startsWith("/") && remotePath.none { it.code == 0 }) {
             "Remote source must be an absolute device path."
         }
+        val stagedFile = File.createTempFile("wdb-pull-", ".part", appContext.cacheDir)
+        var backupFile: File? = null
         var destinationOpened = false
         try {
             val client = requireClient()
-            withActiveClient(client) { active ->
-                val remoteStat = active.sync.stat(remotePath)
-                if (!remoteStat.isFile || remoteStat.size < 0L) {
-                    throw IOException("Remote source is not a regular file.")
-                }
-                val output = appContext.contentResolver.openOutputStream(destination, "wt")
-                    ?: throw IOException("Unable to open the selected destination.")
-                destinationOpened = true
-                var transferred = 0L
-                output.use { stream ->
+            var transferred = 0L
+            val remoteSize = stagedFile.outputStream().buffered().use { stream ->
+                withActiveClient(client) { active ->
+                    val remoteStat = active.sync.stat(remotePath)
+                    if (!remoteStat.isFile || remoteStat.size < 0L) {
+                        throw IOException("Remote source is not a regular file.")
+                    }
                     active.sync.pull(remotePath, stream, onProgress = {
                         transferred = it
                         ensureClientActive(active)
                         onProgress(it)
                     })
+                    ensureClientActive(active)
+                    remoteStat.size
                 }
-                ensureClientActive(active)
-                if (!isCompleteRemoteFileTransfer(remoteStat.size, transferred)) {
-                    throw IOException("Incomplete ADB download: received $transferred of ${remoteStat.size} bytes.")
-                }
-                "Pulled $transferred bytes from $remotePath"
             }
+            if (!isCompleteRemoteFileTransfer(remoteSize, transferred)) {
+                throw IOException("Incomplete ADB download: received $transferred of $remoteSize bytes.")
+            }
+
+            // Preserve an existing destination before publishing the fully downloaded
+            // staging file. A network cancellation never truncates the selected document.
+            val backup = File.createTempFile("wdb-pull-backup-", ".tmp", appContext.cacheDir)
+            backupFile = backup
+            try {
+                val existing = appContext.contentResolver.openInputStream(destination)
+                if (existing != null) {
+                    existing.use { input -> backup.outputStream().buffered().use { input.copyTo(it) } }
+                } else {
+                    backup.delete()
+                    backupFile = null
+                }
+            } catch (_: FileNotFoundException) {
+                backup.delete()
+                backupFile = null
+            }
+
+            val output = appContext.contentResolver.openOutputStream(destination, "wt")
+                ?: throw IOException("Unable to open the selected destination.")
+            destinationOpened = true
+            output.use { target ->
+                stagedFile.inputStream().buffered().use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        currentCoroutineContext().ensureActive()
+                        ensureClientActive(client)
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        target.write(buffer, 0, count)
+                    }
+                    target.flush()
+                }
+            }
+            ensureClientActive(client)
+            "Pulled $transferred bytes from $remotePath"
         } catch (error: Throwable) {
             if (destinationOpened) {
-                runCatching { DocumentsContract.deleteDocument(appContext.contentResolver, destination) }
+                withContext(NonCancellable + Dispatchers.IO) {
+                    val backup = backupFile
+                    if (backup != null) {
+                        try {
+                            val restore = appContext.contentResolver.openOutputStream(destination, "wt")
+                                ?: throw IOException("Unable to restore the previous destination file.")
+                            restore.use { target ->
+                                backup.inputStream().buffered().use { input -> input.copyTo(target) }
+                            }
+                        } catch (restoreError: Throwable) {
+                            error.addSuppressed(restoreError)
+                        }
+                    } else {
+                        runCatching { DocumentsContract.deleteDocument(appContext.contentResolver, destination) }
+                    }
+                }
             }
             throw error
+        } finally {
+            stagedFile.delete()
+            backupFile?.delete()
         }
     }
     suspend fun pullFileToDirectory(remotePath: String, treeUri: Uri, onProgress: (Long) -> Unit = {}): String = withContext(Dispatchers.IO) {
