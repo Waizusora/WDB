@@ -299,6 +299,16 @@ class WirelessAdbManager(
                 var transferred = 0L
                 val temporaryPath = remotePath + ".wdb-" + java.util.UUID.randomUUID() + ".part"
                 try {
+                    val destinationCheck = active.shell(
+                        "if [ -d " + shellQuote(remotePath) + " ]; then printf WDB_DIRECTORY; else printf WDB_FILE; fi"
+                    )
+                    if (!destinationCheck.isSuccess) {
+                        throw IOException(destinationCheck.stderrText.ifBlank { "Unable to inspect the remote destination." })
+                    }
+                    if (destinationCheck.stdoutText.trim() == "WDB_DIRECTORY") {
+                        throw IllegalArgumentException("Remote destination must be a file path, not a directory.")
+                    }
+                    ensureClientActive(active)
                     active.sync.push(stream, temporaryPath, onProgress = { transferred = it; ensureClientActive(active); onProgress(it) })
                     ensureClientActive(active)
                     val move = active.shell("mv -f -- " + shellQuote(temporaryPath) + " " + shellQuote(remotePath))
