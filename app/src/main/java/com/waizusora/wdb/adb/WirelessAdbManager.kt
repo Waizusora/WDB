@@ -408,7 +408,11 @@ class WirelessAdbManager(
                 } catch (error: CancellationException) {
                     // A reconnect can close the forward manager while add() is binding.
                     // Remove any listener that may have been published after close().
-                    runCatching { active.forward.remove("tcp:$localPort") }
+                    try {
+                        active.forward.remove("tcp:$localPort")
+                    } catch (_: Throwable) {
+                        // The old transport may already be closed; its socket teardown is best effort.
+                    }
                     throw error
                 }
                 updatePortRules(active) { rules ->
