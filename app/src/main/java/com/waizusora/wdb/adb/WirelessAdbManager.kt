@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.currentCoroutineContext
@@ -166,7 +166,8 @@ class WirelessAdbManager(
         val selectedName = displayName(uris.singleOrNull())
         val archiveUri = uris.singleOrNull()?.takeIf { selectedName?.substringAfterLast(".", "")?.lowercase() in setOf("apks", "xapk", "apkm", "zip") }
         if (archiveUri != null) {
-            val extracted = extractSplitApks(archiveUri)
+            ensureClientActive(active)
+            val extracted = extractSplitApks(archiveUri, active)
             try {
                 val sources = extracted.map { file -> file.name to RandomAccessSource.of(file) }
                 var latest = "Preparing split APK installation…"
@@ -211,7 +212,7 @@ class WirelessAdbManager(
         return uri.lastPathSegment
     }
 
-    private suspend fun extractSplitApks(uri: Uri): List<File> {
+    private suspend fun extractSplitApks(uri: Uri, client: AdbClient): List<File> {
         val root = File(appContext.cacheDir, "wdb-split-apks")
         if (!root.isDirectory && !root.mkdirs()) {
             throw IOException("Unable to create the APK extraction cache.")
@@ -228,6 +229,7 @@ class WirelessAdbManager(
                 ZipInputStream(raw).use { zip ->
                     while (true) {
                         currentCoroutineContext().ensureActive()
+                        ensureClientActive(client)
                         val entry = zip.nextEntry ?: break
                         val name = entry.name
                         val lower = name.lowercase()
@@ -245,6 +247,7 @@ class WirelessAdbManager(
                                 val buffer = ByteArray(64 * 1024)
                                 while (true) {
                                     currentCoroutineContext().ensureActive()
+                                    ensureClientActive(client)
                                     val count = zip.read(buffer)
                                     if (count < 0) break
                                     totalBytes += count
@@ -515,13 +518,17 @@ class WirelessAdbManager(
         // Capture under the lifecycle lock so a concurrent disconnect cannot expose
         // a partially published or already-detached client to a new stream.
         val client = requireClient()
-        return client.shellFlow("logcat -b all -v threadtime")
-            .onEach { ensureClientActive(client) }
-            .catch { error ->
-                if (shouldRetireAdbClient(error, client.isClosed)) retireClient(client)
-                throw error
+        return flow {
+            // Validate before opening the remote stream, not only after its first chunk.
+            ensureClientActive(client)
+            client.shellFlow("logcat -b all -v threadtime").collect { chunk ->
+                ensureClientActive(client)
+                emit(chunk)
             }
-            .flowOn(Dispatchers.IO)
+        }.catch { error ->
+            if (shouldRetireAdbClient(error, client.isClosed)) retireClient(client)
+            throw error
+        }.flowOn(Dispatchers.IO)
     }
     suspend fun disconnect() {
         // Invalidate in-flight TLS handshakes before dispatching socket teardown.
