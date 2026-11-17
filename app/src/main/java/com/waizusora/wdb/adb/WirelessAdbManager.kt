@@ -215,7 +215,7 @@ class WirelessAdbManager(
 
     private suspend fun extractSplitApks(uri: Uri): List<File> {
         val root = File(appContext.cacheDir, "wdb-split-apks")
-        if (!root.exists() && !root.mkdirs()) {
+        if (!root.isDirectory && !root.mkdirs()) {
             throw IOException("Unable to create the APK extraction cache.")
         }
         val directory = File(root, java.util.UUID.randomUUID().toString())
@@ -317,26 +317,38 @@ class WirelessAdbManager(
         require(remotePath.startsWith("/") && remotePath.none { it.code == 0 }) {
             "Remote source must be an absolute device path."
         }
+        var destinationOpened = false
         try {
-            val output = appContext.contentResolver.openOutputStream(destination, "wt")
-                ?: throw IOException("Unable to open the selected destination.")
-            output.use { stream ->
-                val client = requireClient()
-                withActiveClient(client) { active ->
-                    var transferred = 0L
-                    active.sync.pull(remotePath, stream, onProgress = { transferred = it; ensureClientActive(active); onProgress(it) })
-                    "Pulled $transferred bytes from $remotePath"
+            val client = requireClient()
+            withActiveClient(client) { active ->
+                val remoteStat = active.sync.stat(remotePath)
+                if (!remoteStat.isFile || remoteStat.size < 0L) {
+                    throw IOException("Remote source is not a regular file.")
                 }
+                val output = appContext.contentResolver.openOutputStream(destination, "wt")
+                    ?: throw IOException("Unable to open the selected destination.")
+                destinationOpened = true
+                var transferred = 0L
+                output.use { stream ->
+                    active.sync.pull(remotePath, stream, onProgress = {
+                        transferred = it
+                        ensureClientActive(active)
+                        onProgress(it)
+                    })
+                }
+                ensureClientActive(active)
+                if (!isCompleteRemoteFileTransfer(remoteStat.size, transferred)) {
+                    throw IOException("Incomplete ADB download: received $transferred of \${remoteStat.size} bytes.")
+                }
+                "Pulled $transferred bytes from $remotePath"
             }
         } catch (error: Throwable) {
-            // A cancelled or failed sync must not leave a truncated file that looks complete.
             if (destinationOpened) {
                 runCatching { DocumentsContract.deleteDocument(appContext.contentResolver, destination) }
             }
             throw error
         }
     }
-
     suspend fun pullFileToDirectory(remotePath: String, treeUri: Uri, onProgress: (Long) -> Unit = {}): String = withContext(Dispatchers.IO) {
         require(remotePath.startsWith("/") && remotePath.none { it.code == 0 }) { "Remote source must be an absolute device path." }
         val directory = DocumentFile.fromTreeUri(appContext, treeUri) ?: throw IOException("The saved transfer directory is no longer accessible.")
@@ -350,23 +362,34 @@ class WirelessAdbManager(
         val destination = directory.createFile("application/octet-stream", temporaryName)
             ?: throw IOException("Unable to create a temporary file in the selected transfer directory.")
         try {
-            val output = appContext.contentResolver.openOutputStream(destination.uri, "wt")
-                ?: throw IOException("Unable to open the temporary destination file.")
             val client = requireClient()
             var transferred = 0L
-            output.use { stream ->
+            val output = appContext.contentResolver.openOutputStream(destination.uri, "wt")
+                ?: throw IOException("Unable to open the temporary destination file.")
+            val remoteSize = output.use { stream ->
                 withActiveClient(client) { active ->
-                    active.sync.pull(remotePath, stream, onProgress = { transferred = it; ensureClientActive(active); onProgress(it) })
+                    val remoteStat = active.sync.stat(remotePath)
+                    if (!remoteStat.isFile || remoteStat.size < 0L) {
+                        throw IOException("Remote source is not a regular file.")
+                    }
+                    active.sync.pull(remotePath, stream, onProgress = {
+                        transferred = it
+                        ensureClientActive(active)
+                        onProgress(it)
+                    })
+                    ensureClientActive(active)
+                    remoteStat.size
                 }
             }
-            // Publish the final name only after the stream has closed successfully.
             ensureClientActive(client)
+            if (!isCompleteRemoteFileTransfer(remoteSize, transferred)) {
+                throw IOException("Incomplete ADB download: received $transferred of $remoteSize bytes.")
+            }
             if (!destination.renameTo(fileName)) {
                 throw IllegalStateException("Transfer completed, but the temporary file could not be renamed to $fileName.")
             }
             "Pulled $transferred bytes to $fileName"
         } catch (error: Throwable) {
-            // A failed or cancelled transfer never remains under its final filename.
             runCatching { destination.delete() }
             throw error
         }
@@ -561,3 +584,7 @@ internal fun shouldRetireAdbClient(error: Throwable, clientClosed: Boolean): Boo
         error is AdbException.Transport ||
         error is AdbException.StreamClosed
 }
+
+
+internal fun isCompleteRemoteFileTransfer(expectedBytes: Long, transferredBytes: Long): Boolean =
+    expectedBytes >= 0L && transferredBytes == expectedBytes
