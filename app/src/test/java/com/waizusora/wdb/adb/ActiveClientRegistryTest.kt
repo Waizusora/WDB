@@ -1,5 +1,6 @@
 package com.waizusora.wdb.adb
 
+import java.util.concurrent.CancellationException
 import java.util.concurrent.CountDownLatch
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
@@ -43,6 +44,16 @@ class ActiveClientRegistryTest {
         assertFalse(oldCleanupClearedActive)
         assertTrue(registry.isCurrent(newClient))
         assertSame(newClient, registry.current())
+    }
+
+    @Test
+    fun callerCancellationDoesNotRetireHealthyClient() {
+        assertFalse(shouldRetireAdbClient(CancellationException("caller cancelled"), clientClosed = false))
+    }
+
+    @Test
+    fun closedClientIsRetiredWhenCancellationRaces() {
+        assertTrue(shouldRetireAdbClient(CancellationException("transport closed"), clientClosed = true))
     }
 
     @Test
